@@ -1,0 +1,14 @@
+[project]
+name = "bs-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dotenv>=0.9.9",
+    "fredapi>=0.5.2",
+    "lxml>=5.4.0",
+    "matplotlib>=3.10.1",
+    "scipy>=1.15.2",
+    "yfinance>=0.2.57",
+]
