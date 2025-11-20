@@ -1,45 +1,79 @@
-# Black-Scholes Call Option Pricing in Python
+# Backtesting of a Custom ML-Driven Option Trading Strategy
 
-This project implements the Black-Scholes model in Python to price European call options (contracts exercisable only at expiration). It's commonly used as an approximation for American calls when early exercise is unlikely.
+## Motivation
+The Black–Scholes framework assumes that if volatility is correctly estimated, a delta-hedged option position should earn the risk-free rate. Many volatility trading strategies are therefore based on forecasting future realized volatility more accurately than the market.
 
-## Black-Scholes PDE
+However, option prices are influenced by additional factors beyond volatility expectations. For example, a plausible mechanism is that increased market risk aversion leads to higher option prices. These effects are not captured by volatility-based models alone and may persist systematically.
 
-The Black-Scholes partial differential equation is:
+This project investigates whether a data-driven model can learn such effects and use them to generate alpha.
 
-$$
-\frac{\partial V}{\partial t} + \frac{1}{2} \sigma^2 S^2 \frac{\partial^2 V}{\partial S^2} + r S \frac{\partial V}{\partial S} - r V = 0
-$$
+## Objective & Hypothesis
+**Hypothesis.** Option prices embed information beyond volatility alone. A neural network trained on additional variables (e.g. past option price dynamics, liquidity, risk-aversion indicators) can generate profitable trading signals.
 
-Where:
-- $V$: Option price  
-- $S$: Underlying asset price  
-- $\sigma$: Volatility  
-- $r$: Risk-free interest rate  
-- $t$: Time to expiration  
+Build and train such a model on historical SPY end-of-day options data, then backtest a simple long/short options strategy based on its predictions, including transaction costs.
 
-## Model Assumptions
+## Data
+- Historical SPY options end-of-day (EOD) data from Kaggle:
+    - 2010–2023: main dataset https://www.kaggle.com/datasets/benjaminbtang/spy-options-2010-2023-eod
+    - 2020–2022: secondary dataset for cross-validation https://www.kaggle.com/datasets/kylegraupe/spy-daily-eod-options-quotes-2020-2022
+- Underlying SPY prices retrieved via `yfinance` and compared to Kaggle values for consistency.
+- Filtering criteria:
+    - Days to expiration (DTE) between 2 and 10
+    - Moneyness (strike distance) between -5% and +5%
+    - Option volume above the 95th percentile to ensure liquidity
 
-- Constant $r$ and $\sigma$  
-- Asset follows geometric Brownian motion  
-- No dividends, taxes, or transaction costs  
-- Unlimited shorting and borrowing at the risk-free rate  
-- Frictionless markets (no arbitrage)
+## Train / Validation / Test Split
+- Data split chronologically to avoid look-ahead bias:
+    - **Training:** 2010–2018
+    - **Validation:** 2019–2020
+    - **Test:** 2021–2023
+- Validation period used for hyperparameter tuning and threshold selection.
+- No shuffling applied to preserve temporal structure.
+- All performance metrics reported exclusively on the test period.
 
-## Analytical Solution (European Call)
+## Methodology
 
-$$
-C(S, t) = S \cdot N(d_1) - K e^{-r \tau} \cdot N(d_2)
-$$
+### Model
+Supervised neural network predicting next-day option mid-price change.
 
-With:
+**Output**
+- Predicted next-day option mid-price change
 
-$$
-d_1 = \frac{\ln(S / K) + (r + \frac{1}{2} \sigma^2) \tau}{\sigma \sqrt{\tau}}, \quad
-d_2 = d_1 - \sigma \sqrt{\tau}
-$$
+**Example input features** (factors that could affect option pricing by market participants): 
+- Implied volatility (IV)
+- Forecasted volatility (e.g. GARCH)
+- Option mid-price
+- Price of underlying asset
+- Strike price and moneyness
+- Days to expiration
+- Risk-free rate
+- Greeks (e.g. Delta)
+- Volume / liquidity indicators
+- Market sentiment (e.g. quantified via NLP on social media)
 
-Where:
-- $\tau = T - t$: Time to maturity  
-- $T$: Expiration time  
-- $K$: Strike price  
-- $N(x)$: CDF of the standard normal distribution
+Note: since all Black–Scholes inputs are included among the features, the neural network should be able to reproduce the BS pricing function and potentially extend beyond it if additional effects are present.
+
+### Trading Strategy
+To isolate the effect of the model, a simple directional strategy is used:
+
+```
+signal = NN prediction of (next-day option price – current price)
+
+if signal > threshold → buy option
+if signal < -threshold → sell option
+```
+
+Transaction costs are incorporated in the backtest.
+
+## Backtest Framework
+To be defined:
+- Execution assumptions (EOD pricing, slippage model)
+- Performance metrics (Sharpe ratio, annualized return, drawdown, hit ratio)
+
+## Results
+**To be completed upon backtest execution.**
+
+## Conclusions & Future Work
+**To be completed upon backtest execution.**
+
+

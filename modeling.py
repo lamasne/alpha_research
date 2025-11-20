@@ -26,50 +26,6 @@ def predict_volatility(adj_close_prices):
 
     return iv
 
-def implied_volatility(C_market, S, K, T, r, option_type) -> float:
-    """Calculate the implied volatility of a European option using the Black-Scholes model."""
-    objective = lambda sigma: black_scholes_price(S, K, T, r, sigma, option_type) - C_market
-    try:
-        return brentq(objective, 1e-6, 5.0, maxiter=1000)
-    except ValueError:
-        return np.nan  # or handle as needed
-
-
-def black_scholes_price(S, K, T, r, sigma, option_type):
-    """
-    Calculate the Black-Scholes option price.
-    inputs:
-        S: Current stock price.
-        K: Strike price.
-        T: Time to expiration (in years).
-        r: Risk-free interest rate (annualized).
-        sigma: Volatility of the underlying stock (annualized).
-        option_type: Type of option ('call' or 'put'). 
-    outputs:
-        option_price: Theoretical price of the option.
-    """
-    if T <= 0:
-        raise ValueError("Time to expiration must be greater than zero.")
-    if sigma <= 0:
-        raise ValueError("Volatility must be greater than zero.")
-    if S <= 0 or K <= 0:
-        raise ValueError("Stock price and strike price must be greater than zero.")
-    if option_type not in ['call', 'put']:
-        raise ValueError("Invalid option type. Please use 'call' or 'put'.")
-    
-    # Calculate d1 and d2
-    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))    
-    d2 = d1 - sigma * np.sqrt(T)
-
-    if option_type == 'call':
-        option_price = (S * si.norm.cdf(d1, 0.0, 1.0) - K * np.exp(-r * T) * si.norm.cdf(d2, 0.0, 1.0))
-    elif option_type == 'put':
-        option_price = (K * np.exp(-r * T) * si.norm.cdf(-d2, 0.0, 1.0) - S * si.norm.cdf(-d1, 0.0, 1.0))
-    else:
-        raise ValueError("Invalid option type. Please use 'call' or 'put'.")
-
-    return option_price
-
 def check_bs_price(df, r):
     """
     Check if BS price, based on yfinance IV, match market price for each option.
