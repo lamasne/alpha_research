@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from preprocessing import format_opt_data, filt_opt_df, IV_sanity_check
+from preprocessing import format_opt_data, filt_opt_df, IV_sanity_check, underlying_sanity_check
 
 load_dotenv()
 FRED_API_KEY = os.getenv("FRED_API_KEY")   
@@ -17,8 +17,8 @@ input_filename = "SPY Options 2010-2023 EOD.csv"
 if __name__ == "__main__":
 
     # df_calls, df_puts = format_opt_data(dir, input_filename)
-    df_filt_calls = filt_opt_df(dir=dir, filename="calls.csv", start_date=start_date, end_date=end_date)
+    # df_filt_calls = filt_opt_df(dir=dir, filename="calls.csv", start_date=start_date, end_date=end_date)
     # df = IV_sanity_check(df_filt_calls, FRED_API_KEY=FRED_API_KEY)
-    
+    # underlying_sanity_check()
 
     print("--------Done---------")

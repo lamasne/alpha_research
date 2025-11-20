@@ -90,6 +90,9 @@ IV (dataset) → IV (computed)
 
 The custom IV computation shows consistent behavior, with a mean error of **7.01e-03 (5.24%)** and a mean absolute error of **1.07e-02 (7.99%)**, confirming reasonable agreement with the reference data for this sanity check.
 
+To validate the underlying prices, I compared SPY close prices from the options datasets against SPY closes from Yahoo Finance (yfinance) over 2020–2021. The three series overlap almost perfectly, confirming that the underlying data is consistent with market quotes.
+
+<img src="plots/spy_close_comparison_2020_2021.png" width="600">
 
 ### Model
 **To be completed upon backtest execution.**
