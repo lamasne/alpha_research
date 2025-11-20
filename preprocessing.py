@@ -18,9 +18,10 @@ from scipy.optimize import brentq
 # Data preprocessing #
 ######################
 
-def format_opt_df(dir="data/dataset1", input_filename="SPY Options 2010-2023 EOD.csv"):
+def format_opt_data(dir="data/dataset1", input_filename="SPY Options 2010-2023 EOD.csv"):
     """
-    Format raw options data from Kaggle
+    Preprocess raw options data from Kaggle
+    Filter via volume threshold, split into calls and puts, and format col names for consistency
     """
     spy_file = f"{dir}/{input_filename}"
     df = pd.read_csv(spy_file)
@@ -41,9 +42,9 @@ def format_opt_df(dir="data/dataset1", input_filename="SPY Options 2010-2023 EOD
     for col in ['C_VOLUME', 'C_BID', 'C_ASK', 'C_IV', 'P_VOLUME', 'P_BID', 'P_ASK', 'P_IV']:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Filter via volume threshold, split into calls and puts, and format col names for consistency
-    # # histogram of C_VOLUME (identified as negative binomial)
-    # fig = px.density_heatmap(df, nbinsx=20, nbinsy=20, x="C_VOLUME", y="STRIKE_DISTANCE_PCT", marginal_x="histogram", marginal_y="histogram")
+    # Analyze strike distance volume
+    strike_distance_volume_analysis(df)
+
     df_calls = (
         df.loc[df["C_VOLUME"] > df["C_VOLUME"].quantile(0.95)]
         .drop(columns=["P_VOLUME", "P_BID", "P_ASK", "P_IV"])
@@ -62,6 +63,39 @@ def format_opt_df(dir="data/dataset1", input_filename="SPY Options 2010-2023 EOD
     df_puts.to_csv(f"{dir}/puts.csv", index=False)
 
     return df_calls, df_puts
+
+
+def strike_distance_volume_analysis(df):
+    """
+    Analyze strike distance - volume relationship
+    """
+    # 1) bins
+    bins = np.linspace(df["STRIKE_DISTANCE_PCT"].min(),
+                    df["STRIKE_DISTANCE_PCT"].max(), 20)
+    n_bins = len(bins) - 1
+
+    # 2) assign obs to bins (1..n_bins)
+    df["sd_bin"] = np.digitize(df["STRIKE_DISTANCE_PCT"], bins)
+    df["sd_bin"] = df["sd_bin"].clip(1, n_bins)
+
+    # 3) sum volume per bin and reindex to all bins
+    volume_per_bin = df.groupby("sd_bin")["C_VOLUME"].sum()
+    volume_per_bin = volume_per_bin.reindex(np.arange(1, n_bins + 1), fill_value=0)
+
+    # 4) x positions = bin centers (length n_bins)
+    bin_centers = 0.5 * (bins[:-1] + bins[1:])
+
+    plt.figure()
+    plt.bar(bin_centers,
+            volume_per_bin.values,
+            width=(bins[1] - bins[0]),
+            edgecolor='black')
+    plt.xlabel("Strike distance (%)")
+    plt.ylabel("Total traded volume")
+    plt.yscale("log")
+    plt.title("Traded volume per strike distance percentage")
+    plt.tight_layout()
+    plt.show()
 
 
 def filt_opt_df(dir="data/dataset1", filename="calls.csv", start_date="2020-01-01", end_date="2021-12-31"):
