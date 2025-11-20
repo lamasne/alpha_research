@@ -3,7 +3,14 @@ import pandas as pd
 import numpy as np
 from arch import arch_model
 
-def predict_1day_volatility(file_path="data/yf/yf_spy_prices_2020_2022.csv", horizon = 5, rolling_window=5):
+
+
+def neural_net_model():
+    pass
+
+
+
+def predict_1day_volatility(file_path="data/yf/yf_spy_prices_2020_2022.csv", horizon = 5, rolling_windows=[5, 10, 30]):
     """
     Fit a GARCH(1,1) model on EOD SPY returns (2020–H1 2021) and
     predict next-day volatility. Then plot 'horizon'-day rolling realized
@@ -17,12 +24,13 @@ def predict_1day_volatility(file_path="data/yf/yf_spy_prices_2020_2022.csv", hor
     df["Date"] = df["Date"].dt.tz_convert(None).dt.normalize()
     df.sort_values("Date", inplace=True)
 
-    # Compute returns and realized vol
+    # Compute returns and realized volatilities
     df["Return"] = 100 * df["Close"].pct_change()
     df = df.dropna(subset=["Return"])
     returns   = df["Return"]
     ret_dates = df["Date"]
-    real_vol = returns.rolling(window=rolling_window).std()
+    real_vols = [returns.rolling(window=rolling_window).std().shift(-rolling_window//2) for rolling_window in rolling_windows]
+
 
     # ---------- Train / test split ----------
     init_train_mask = (ret_dates >= "2020-01-01") & (ret_dates <= "2022-06-30")
@@ -69,7 +77,7 @@ def predict_1day_volatility(file_path="data/yf/yf_spy_prices_2020_2022.csv", hor
 
     # Top plot: Returns and realized vol
     ax1.plot(ret_dates, returns, label="Daily returns", linewidth=1)
-    ax1.plot(ret_dates, real_vol, label=f"Realized {rolling_window}-day rolling volatility", linewidth=1)
+    ax1.plot(ret_dates, real_vols[0], label=f"Realized {rolling_windows[0]}-day rolling volatility", linewidth=1)
     ax1.set_title("SPY Daily Returns and Realized Volatility")
     ax1.set_ylabel("Return (%)")
     ax1.legend()
@@ -77,7 +85,8 @@ def predict_1day_volatility(file_path="data/yf/yf_spy_prices_2020_2022.csv", hor
 
     # Bottom plot: Absolute returns and realized vol  
     ax2.plot(ret_dates, returns.abs(), label="Absolute returns", linewidth=1, color='orange')
-    ax2.plot(ret_dates, real_vol, label=f"Realized {rolling_window}-day rolling volatility", linewidth=1, color='green')
+    for real_vol, rolling_window in zip(real_vols, rolling_windows):
+        ax2.plot(ret_dates, real_vol, label=f"Realized {rolling_window}-day rolling volatility", linewidth=1)
     ax2.set_title("Absolute Returns vs Realized Volatility")
     ax2.set_xlabel("Date")
     ax2.set_ylabel("Return (%)")
@@ -88,7 +97,7 @@ def predict_1day_volatility(file_path="data/yf/yf_spy_prices_2020_2022.csv", hor
 
     # ---------- Plot realized vs forecast vol on test ----------
     fig2, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(ret_dates, real_vol, label=f"Realized {rolling_window}-day rolling volatility", linewidth=1)
+    ax.plot(ret_dates, real_vols[0], label=f"Realized {rolling_windows[0]}-day rolling volatility", linewidth=1)
 
     # Plot all forecasts with the same label (only first one gets labeled to avoid duplicates)
     cmap = plt.get_cmap("tab10")
