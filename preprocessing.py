@@ -257,12 +257,12 @@ def underlying_sanity_check(dir="data"):
     df2['QUOTE_DATE'] = pd.to_datetime(df2['QUOTE_UNIXTIME'], unit='s').dt.normalize()
 
     ## Load YFinance data
-    yf_input_path = f"{dir}/yf/yf_spy_prices_2020_2022_no_adj.csv"
+    yf_input_path = f"{dir}/yf/yf_spy_prices_2020_2022.csv"
     if not os.path.exists(yf_input_path):
         df_yf = get_SPY_EOD_df()
     else:
         df_yf = pd.read_csv(
-            "data/yf/yf_spy_prices_2020_2022_no_adj.csv",
+            yf_input_path,
             parse_dates=["Date"]
         )
     # Format dates
