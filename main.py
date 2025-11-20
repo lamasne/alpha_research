@@ -16,9 +16,9 @@ input_filename = "SPY Options 2010-2023 EOD.csv"
 
 if __name__ == "__main__":
 
-    df_calls, df_puts = format_opt_data(dir, input_filename)
+    # df_calls, df_puts = format_opt_data(dir, input_filename)
     df_filt_calls = filt_opt_df(dir=dir, filename="calls.csv", start_date=start_date, end_date=end_date)
-    # df = IV_sanity_check(df, FRED_API_KEY=FRED_API_KEY)
+    # df = IV_sanity_check(df_filt_calls, FRED_API_KEY=FRED_API_KEY)
     
 
     print("--------Done---------")

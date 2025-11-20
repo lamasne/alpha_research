@@ -71,6 +71,30 @@ To be defined:
 - Performance metrics (Sharpe ratio, annualized return, drawdown, hit ratio)
 
 ## Results
+
+### Data exploration
+Trading activity is strongly concentrated around at-the-money strikes. As strike distance increases, traded volume decreases approximately exponentially (appearing nearly linear on the log-scale), as shown below.
+<img src="plots/volume_to_strike_distance_SPY_calls_2010-2023.png" width="400">
+
+To verify the correctness of the implied volatility computation, I compared the calculated IV (`MY_IV`) against the dataset-provided IV values over random samples:
+
+```
+IV (dataset) → IV (computed)
+1.32e-01     → 1.31e-01
+1.67e-01     → 1.75e-01
+1.20e-01     → 1.47e-01
+1.33e-01     → 1.40e-01
+9.66e-02     → 1.03e-01
+...          → ...
+```
+
+The custom IV computation shows consistent behavior, with a mean error of **7.01e-03 (5.24%)** and a mean absolute error of **1.07e-02 (7.99%)**, confirming reasonable agreement with the reference data for this sanity check.
+
+
+### Model
+**To be completed upon backtest execution.**
+
+### Backtest
 **To be completed upon backtest execution.**
 
 ## Conclusions & Future Work

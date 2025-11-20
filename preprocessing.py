@@ -139,11 +139,12 @@ def filt_opt_df(dir="data/dataset1", filename="calls.csv", start_date="2020-01-0
 # Sanity checks #
 #################
 
-def IV_sanity_check(df, opt_type='call', nb_rows=20, trading_days_per_year=365.0, FRED_API_KEY=None):
+def IV_sanity_check(df, opt_type='call', nb_rows=200, trading_days_per_year=365.0, FRED_API_KEY=None):
     """
     Calculate implied volatility from options dataframe
     """
-    df = df.head(nb_rows).copy()
+    # Sample rows
+    df = df.sample(n=nb_rows, random_state=0).copy()
 
     # Acquire risk-free rates
     rf_path = 'data/GS1_data.json'
@@ -169,7 +170,21 @@ def IV_sanity_check(df, opt_type='call', nb_rows=20, trading_days_per_year=365.0
 
     df["MY_IV"] = df.apply(iv_row, axis=1)
 
-    print(df[["IV", "MY_IV"]])
+    # Error metrics on the sliced df
+    df["IV_ERR"] = df["MY_IV"] - df["IV"]
+    mean_err = df["IV_ERR"].mean()
+    mae = df["IV_ERR"].abs().mean()
+
+    iv_mean = df["IV"].mean()
+    mean_err_pct = 100 * mean_err / iv_mean
+    mae_pct = 100 * mae / iv_mean
+
+    print(df[["IV", "MY_IV"]].head(5).to_string(
+        float_format="{:.2e}".format,
+        index=False
+    ))
+    print(f"Mean error     : {mean_err:.2e} ({mean_err_pct:.2f}%)")
+    print(f"Mean abs error : {mae:.2e} ({mae_pct:.2f}%)")
 
     return df
 
