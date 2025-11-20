@@ -1,5 +1,7 @@
 # Backtesting of a Custom ML-Driven Option Trading Strategy
 
+**Status** (Nov 2025): This project is under active development (e.g., extending dataset to 10 years, refining GARCH modeling, building deeper neural network architecture with more input features). Previous versions are available [here](https://github.com/lamasne/technical_analysis.git).
+
 ## Motivation
 The Black–Scholes framework assumes that if volatility is correctly estimated, a delta-hedged option position should earn the risk-free rate. Many volatility trading strategies are therefore based on forecasting future realized volatility more accurately than the market.
 
