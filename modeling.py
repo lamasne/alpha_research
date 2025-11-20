@@ -35,23 +35,26 @@ def predict_1day_volatility(file_path="data/yf/yf_spy_prices_2020_2022.csv", hor
 
     # ---------- Forecast ---------
     forecast_segments = []
-    for t in range(0, len(test_ret) - horizon, len(test_ret)//4):  # step to reduce plotting load
-        # Fit GARCH(1,1) on rolling TRAIN data - up to the current test day (no look-ahead bias!) 
+
+    # Forecast cond vol at different time points in test data
+    nb_steps = 4 # number of rolling forecasts to make
+    for t in range(0, len(test_ret) - horizon, len(test_ret)//nb_steps):  
+
+        # Fit GARCH(1,1) model to rolling training data - up to the current test day (no look-ahead bias) 
         rol_train_ret = pd.concat([init_train_ret[t:], test_ret.iloc[:t]])
         if rol_train_ret.empty:
             continue
         model = arch_model(rol_train_ret, vol="GARCH", p=1, q=1)
         res = model.fit(disp="off")
 
-        # Get sigma of t-1 (last period's conditional volatility)
+        # Get conditional volatility on training data
         train_vol = np.sqrt(res.conditional_volatility)
-        print(train_vol)
 
-        # Get forecast for horizon
+        # Get conditional volatility forecast for horizon
         fc = res.forecast(horizon=horizon)
         fc_vols = np.sqrt(fc.variance.values[-1])
         
-        # Combine: [sigma_t-1, forecast_sigma_t, forecast_sigma_t+1, ...]
+        # Combine: train + forecast
         combined_vols = np.concatenate([train_vol, fc_vols])
         
         # Adjust dates to include t-1
@@ -88,7 +91,8 @@ def predict_1day_volatility(file_path="data/yf/yf_spy_prices_2020_2022.csv", hor
     ax.plot(ret_dates, real_vol, label=f"Realized {rolling_window}-day rolling volatility", linewidth=1)
 
     # Plot all forecasts with the same label (only first one gets labeled to avoid duplicates)
-    colors = plt.cm.tab10(np.linspace(0, 1, len(forecast_segments)), )
+    cmap = plt.get_cmap("tab10")
+    colors = cmap(np.linspace(0, 1, max(1, len(forecast_segments))))
     for i, (dates, vols) in enumerate(forecast_segments):
         if i == 0:
             ax.plot(dates[:-horizon], vols[:-horizon], color=colors[i], alpha=0.3, marker='o', markersize=4,
