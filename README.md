@@ -10,9 +10,9 @@ However, option prices are influenced by additional factors beyond volatility ex
 This project investigates whether a data-driven model can learn such effects and use them to generate alpha.
 
 ## Objective & Hypothesis
-**Hypothesis.** Option prices embed information beyond volatility alone. A neural network trained on additional variables (e.g. past option price dynamics, liquidity, risk-aversion indicators) can generate profitable trading signals.
+**Hypothesis.** Option prices embed information beyond its intrinsic value and the realized volatility expected by market participants. A neural network trained on additional variables (e.g. past option price dynamics, bias in volatility forecasting from market participants, risk-aversion indicators) can generate profitable trading signals.
 
-Build and train such a model on historical SPY end-of-day options data, then backtest a simple long/short options strategy based on its predictions, including transaction costs.
+**Goal.** Build and train such a model on historical SPY end-of-day options data, then backtest a simple long/short options strategy based on its predictions, including transaction costs.
 
 ## Data
 - Historical SPY options end-of-day (EOD) data from Kaggle:
