@@ -25,13 +25,34 @@ This project investigates whether a data-driven model can learn such effects and
     - Option volume above the 95th percentile to ensure liquidity
 
 ## Train / Validation / Test Split
-- Data split chronologically to avoid look-ahead bias:
-    - **Training:** 2010–2018
-    - **Validation:** 2019–2020
-    - **Test:** 2021–2023
-- Validation period used for hyperparameter tuning and threshold selection.
-- No shuffling applied to preserve temporal structure.
-- All performance metrics reported exclusively on the test period.
+
+To avoid look-ahead bias, all splits are chronological.
+
+### Walk-Forward Validation (3 Folds)
+A rolling expanding-window scheme is used for hyperparameter tuning:
+
+- **Fold 1:**  
+  - Train: 2010–2017
+  - Validation: 2018
+
+- **Fold 2:**  
+  - Train: 2010–2018  
+  - Validation: 2019
+
+- **Fold 3:**  
+  - Train: 2010–2019
+  - Validation: 2020
+
+Hyperparameters are selected by averaging validation performance across the three folds.  
+No shuffling is applied at any stage.
+
+### Final Evaluation
+After tuning, the model is retrained on **2010–2020** and evaluated once on:
+
+- **Test:** 2021–2023
+
+All reported metrics come exclusively from the test period.
+
 
 ## Methodology
 
