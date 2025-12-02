@@ -5,6 +5,7 @@ from .yfinance_cookie_patch import patch_yfdata_cookie_basic
 import time
 import random
 import pandas as pd
+import polars as pl
 import yfinance as yf
 import os
 from fredapi import Fred
@@ -18,7 +19,9 @@ from src.config import ROOT
 # Data preprocessing #
 ######################
 
-def format_opt_data(dir=ROOT/"resources/data/dataset1", input_filename="SPY Options 2010-2023 EOD.csv"):
+def format_opt_data(dir=ROOT/"resources/data/dataset1", 
+input_filename="SPY Options 2010-2023 EOD.csv",
+volume_thresh = 0.95):
     """
     Preprocess raw options data from Kaggle
     Filter via volume threshold, split into calls and puts, and format col names for consistency
@@ -46,13 +49,13 @@ def format_opt_data(dir=ROOT/"resources/data/dataset1", input_filename="SPY Opti
     strike_distance_volume_analysis(df)
 
     df_calls = (
-        df.loc[df["C_VOLUME"] > df["C_VOLUME"].quantile(0.95)]
+        df.loc[df["C_VOLUME"] > df["C_VOLUME"].quantile(volume_thresh)]
         .drop(columns=["P_VOLUME", "P_BID", "P_ASK", "P_IV"])
         .rename(columns={"C_VOLUME": "VOLUME", "C_BID": "BID", "C_ASK": "ASK", "C_IV": "IV"})
         .copy()
     )
     df_puts = (
-        df.loc[df["P_VOLUME"] > df["P_VOLUME"].quantile(0.95)]
+        df.loc[df["P_VOLUME"] > df["P_VOLUME"].quantile(volume_thresh)]
         .drop(columns=["C_VOLUME", "C_BID", "C_ASK", "C_IV"])
         .rename(columns={"P_VOLUME": "VOLUME", "P_BID": "BID", "P_ASK": "ASK", "P_IV": "IV"})
         .copy()
@@ -98,41 +101,75 @@ def strike_distance_volume_analysis(df):
     plt.show()
 
 
-def filt_opt_df(dir=ROOT/"resources/data/dataset1", filename="calls.csv", start_date="2020-01-01", end_date="2021-12-31"):
+
+def filt_opt_df(
+    dir=ROOT / "resources/data/dataset1",
+    filename="calls.csv",
+    start_date="2012-01-01",
+    end_date="2021-12-31"
+):
     """
     Prepare training set
     """
+
     input_path = f"{dir}/{filename}"
-    df = pd.read_csv(input_path)
+    df = pl.read_csv(input_path)
 
-    # Select DTE between 2 and 10 days
-    df = df[(df["DTE"] >= 2) & (df["DTE"] <= 10)]
+    # Convert UNIX timestamps → date columns
+    df = df.with_columns([
+        pl.from_epoch(pl.col("QUOTE_UNIX"), time_unit="s")
+        .cast(pl.Date)
+        .alias("QUOTE_DATE"),
+        pl.from_epoch(pl.col("EXPIRE_UNIX"), time_unit="s")
+        .cast(pl.Date)
+        .alias("EXPIRE_DATE"),
+    ])
 
-    # Select strike distance pct between -5% and 5%
-    df = df[abs(df["STRIKE_DISTANCE_PCT"]) <= 0.05]
+    # Filter DTE in [2, 10]
+    df = df.filter(
+        (pl.col("DTE") >= 2) & (pl.col("DTE") <= 10)
+    )
 
-    # Select data that is between 2020 and 2022 in unix
-    start = int(pd.Timestamp(start_date).timestamp())
-    end   = int(pd.Timestamp(end_date).timestamp())
-    df = df[(df["QUOTE_UNIX"] >= start) & (df["QUOTE_UNIX"] <= end)]
+    # Filter |strike distance| ≤ 5%
+    df = df.filter(
+        pl.col("STRIKE_DISTANCE_PCT").abs() <= 0.05
+    )
 
-    # Sort by EXPIRE_UNIX
-    df.sort_values("QUOTE_UNIX", inplace=True)
+    # Filter by QUOTE_DATE range
+    df = df.filter(
+        (pl.col("QUOTE_DATE") >= pl.lit(start_date).str.strptime(pl.Date)) &
+        (pl.col("QUOTE_DATE") <= pl.lit(end_date).str.strptime(pl.Date))
+    )
 
-    # Format dates
-    for feature in ["QUOTE", "EXPIRE"]:
-        df[feature + "_DATE"] = (
-            pd.to_datetime(df[feature + "_UNIX"], unit="s")
-            .dt.normalize()
-        )
-        df.drop(feature + "_UNIX", axis=1, inplace=True)
+    # Sort so that each option contract (same strike + expiry) appears as a time series
+    df = df.with_columns([
+        (pl.col("EXPIRE_DATE").cast(pl.Utf8) + "_" + pl.col("STRIKE").cast(pl.Utf8))
+            .alias("CONTRACT_ID")
+            .cast(pl.Categorical)
+    ])
+    df = df.sort(["CONTRACT_ID", "QUOTE_DATE"])
 
-    # Reorder df
-    df = df[['QUOTE_DATE', 'EXPIRE_DATE', 'DTE', 'UNDERLYING_LAST', 'STRIKE', 'STRIKE_DISTANCE_PCT','VOLUME', 'BID', 'ASK', 'IV']]
+    # Select + reorder columns
+    df = df.select([
+        "CONTRACT_ID",
+        "EXPIRE_DATE",
+        "QUOTE_DATE",
+        "DTE",
+        "UNDERLYING_LAST",
+        "STRIKE",
+        "STRIKE_DISTANCE_PCT",
+        "VOLUME",
+        "BID",
+        "ASK",
+        "IV",
+    ])
 
-    df.to_csv(f"{dir}/filt_{filename}", index=False)
+    # Save output
+    output_path = f"{dir}/filt_{filename}"
+    df.write_csv(output_path)
 
     return df
+
 
 
 #################
@@ -144,6 +181,7 @@ def IV_sanity_check(df, opt_type='call', nb_rows=200, trading_days_per_year=365.
     Calculate implied volatility from options dataframe
     """
     # Sample rows
+    df = df.to_pandas()
     df = df.sample(n=nb_rows, random_state=0).copy()
 
     # Acquire risk-free rates
@@ -304,14 +342,17 @@ def get_SPY_EOD_df():
     # spy.to_csv(ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv")
     # return spy
 
+    y1 = "2020"
+    y2 = "2023"
+
     spy = tkr.history(
-        start="2020-01-01",
-        end="2023-01-01",
+        start= f"{y1}-01-01",
+        end= f"{y2}-01-01",
         auto_adjust=False,
         actions=True
     )
 
-    spy.to_csv(ROOT/"resources/data/yf/yf_spy_prices_2020_2022_no_adj.csv")
+    spy.to_csv(ROOT/f"resources/data/yf/yf_spy_prices_{y1}_{int(y2)-1}.csv")
     return spy
 
 

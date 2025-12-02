@@ -69,7 +69,7 @@ def RV_GARCH_prediction(file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2
 
 
 
-def predict_1day_volatility_test(file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv", horizon = 5, rolling_windows=[5, 10, 30]):
+def predict_1day_volatility_test(file_path = ROOT/"resources/data/yf/yf_spy_prices_2010_2022.csv", horizon = 5, rolling_windows=[5, 10, 30]):
     """
     Fit a GARCH(1,1) model on EOD SPY returns (2020–H1 2021) and
     predict next-day volatility. Then plot 'horizon'-day rolling realized
@@ -92,8 +92,10 @@ def predict_1day_volatility_test(file_path = ROOT/"resources/data/yf/yf_spy_pric
     real_vols = [returns.rolling(window=w).std() for w in rolling_windows]
 
 
+    print(f"full range in time is {ret_dates.min()} to {ret_dates.max()}")
+
     # ---------- Train / test split ----------
-    init_train_mask = (ret_dates >= "2020-01-01") & (ret_dates <= "2022-06-30")
+    init_train_mask = (ret_dates >= "2010-01-01") & (ret_dates <= "2022-06-30")
     test_mask = (ret_dates >= "2022-07-01") & (ret_dates <= "2022-12-31")
     init_train_ret   = returns[init_train_mask]
     test_ret    = returns[test_mask]

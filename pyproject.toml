@@ -13,6 +13,8 @@ dependencies = [
     "lxml>=5.4.0",
     "matplotlib>=3.10.1",
     "plotly>=6.4.0",
+    "polars>=1.35.2",
+    "pyarrow>=22.0.0",
     "scipy>=1.15.2",
     "yfinance>=0.2.57",
 ]
