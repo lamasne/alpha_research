@@ -1,15 +1,11 @@
+from src.config import ROOT
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from arch import arch_model
 
 
-
-def neural_net_model():
-    pass
-
-
-def RV_GARCH_prediction(file_path="data/yf/yf_spy_prices_2020_2022.csv", horizon = 2, train_size=252):    
+def RV_GARCH_prediction(file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv", horizon = 2, train_size=252):    
     """
     Returns {horizon}-day forecast of conditional volatility for each time in file {file_path} 
     based on garch model with a rolling window training dataset of size {train_size}
@@ -49,31 +45,31 @@ def RV_GARCH_prediction(file_path="data/yf/yf_spy_prices_2020_2022.csv", horizon
         
         forecast_segments.append((fc_dates, fc_vols))
 
-    # # Plot forecast_segments
-    # def plot_GARCH(w=5):
-    #     rv = returns.rolling(window=w).std()
-    #     cv = arch_model(returns, vol="GARCH", p=1, q=1).fit(disp="off").conditional_volatility
+    # Plot forecast_segments
+    def plot_GARCH(w=5):
+        rv = returns.rolling(window=w).std()
+        cv = arch_model(returns, vol="GARCH", p=1, q=1).fit(disp="off").conditional_volatility
 
-    #     fig, ax = plt.subplots(figsize=(10, 4))
-    #     ax.plot(ret_dates, rv, label=f"Realized {w}-day rolling volatility", linewidth=1)
-    #     ax.plot(ret_dates, cv, label="Cond volatility", linewidth=1)
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(ret_dates, rv, label=f"Realized {w}-day rolling volatility", linewidth=1)
+        ax.plot(ret_dates, cv, label="Cond volatility", linewidth=1)
 
-    #     for s in forecast_segments:
-    #         ax.plot(s[0], s[1], marker='*', markersize=2)
+        for s in forecast_segments:
+            ax.plot(s[0], s[1], marker='*', markersize=2)
 
-    #     ax.legend()
-    #     ax.set_xlabel("Date")
-    #     ax.set_ylabel("Realized Volatility")
-    #     ax.grid(True)
-    #     plt.show()
+        ax.legend()
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Realized Volatility")
+        ax.grid(True)
+        plt.show()
 
-    # plot_GARCH()
+    plot_GARCH()
 
     return forecast_segments
 
 
 
-def predict_1day_volatility_test(file_path="data/yf/yf_spy_prices_2020_2022.csv", horizon = 5, rolling_windows=[5, 10, 30]):
+def predict_1day_volatility_test(file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv", horizon = 5, rolling_windows=[5, 10, 30]):
     """
     Fit a GARCH(1,1) model on EOD SPY returns (2020–H1 2021) and
     predict next-day volatility. Then plot 'horizon'-day rolling realized

@@ -1,7 +1,7 @@
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
-
+from config import ROOT
 
 
 def plot_time_series(label, title=None):
@@ -10,7 +10,7 @@ def plot_time_series(label, title=None):
         title = label + ' Time Series'
 
     # Load the JSON data
-    with open('data/' + label + '_data.json', 'r') as f:
+    with open(ROOT/'resources/data/' + label + '_data.json', 'r') as f:
         data_dict = json.load(f)
 
     # Convert the dictionary to a pandas DataFrame

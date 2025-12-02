@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import traceback
 from curl_cffi import requests as curl_requests
-from yfinance_cookie_patch import patch_yfdata_cookie_basic
+from .yfinance_cookie_patch import patch_yfdata_cookie_basic
 import time
 import random
 import pandas as pd
@@ -12,13 +12,13 @@ import json
 import numpy as np
 import scipy.stats as si
 from scipy.optimize import brentq
-
+from src.config import ROOT
 
 ######################
 # Data preprocessing #
 ######################
 
-def format_opt_data(dir="data/dataset1", input_filename="SPY Options 2010-2023 EOD.csv"):
+def format_opt_data(dir=ROOT/"resources/data/dataset1", input_filename="SPY Options 2010-2023 EOD.csv"):
     """
     Preprocess raw options data from Kaggle
     Filter via volume threshold, split into calls and puts, and format col names for consistency
@@ -98,7 +98,7 @@ def strike_distance_volume_analysis(df):
     plt.show()
 
 
-def filt_opt_df(dir="data/dataset1", filename="calls.csv", start_date="2020-01-01", end_date="2021-12-31"):
+def filt_opt_df(dir=ROOT/"resources/data/dataset1", filename="calls.csv", start_date="2020-01-01", end_date="2021-12-31"):
     """
     Prepare training set
     """
@@ -147,9 +147,9 @@ def IV_sanity_check(df, opt_type='call', nb_rows=200, trading_days_per_year=365.
     df = df.sample(n=nb_rows, random_state=0).copy()
 
     # Acquire risk-free rates
-    rf_path = 'data/GS1_data.json'
+    rf_path = ROOT/"resources/data/GS1_data.json"
     if not os.path.exists(rf_path):
-        rfs = get_data_from_fred(FRED_API_KEY, "GS1", output_dir='data')
+        rfs = get_data_from_fred(FRED_API_KEY, "GS1", output_dir=ROOT/"resources/data")
     else:   
         with open(rf_path, 'r') as file:
             rfs = json.load(file)
@@ -233,7 +233,7 @@ def compute_BS_price(S, K, T, r, sigma, opt_type):
     return option_price
 
 
-def underlying_sanity_check(dir="data"):
+def underlying_sanity_check(dir=ROOT/"resources/data"):
     """ Compare Kaggle datasets with YFinance data """
     ## Load Kaggle dataset1
     df1 = pd.read_csv(f"{dir}/dataset1/SPY Options 2010-2023 EOD.csv")
@@ -301,7 +301,7 @@ def get_SPY_EOD_df():
     session = curl_requests.Session(impersonate="chrome")
     tkr = yf.Ticker("SPY", session=session)
     # spy = tkr.history(start="2020-01-01", end="2023-01-01")
-    # spy.to_csv("data/yf/yf_spy_prices_2020_2022.csv")
+    # spy.to_csv(ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv")
     # return spy
 
     spy = tkr.history(
@@ -311,11 +311,11 @@ def get_SPY_EOD_df():
         actions=True
     )
 
-    spy.to_csv("data/yf/yf_spy_prices_2020_2022_no_adj.csv")
+    spy.to_csv(ROOT/"resources/data/yf/yf_spy_prices_2020_2022_no_adj.csv")
     return spy
 
 
-def get_SPY_options_df(output_dir="data", nb_expiries=5, nb_attempts=3):
+def get_SPY_options_df(output_dir=ROOT/"resources/data", nb_expiries=5, nb_attempts=3):
     # one server connection to reduce cryptographic exchanges and be more human-like
     ticker = "SPY"
     session = curl_requests.Session(impersonate="chrome")
@@ -455,7 +455,7 @@ def get_SPY_options_df(output_dir="data", nb_expiries=5, nb_attempts=3):
 #     return df['Close']
 
 
-def get_data_from_fred(FRED_API_KEY, label, output_dir='data', is_save=True):
+def get_data_from_fred(FRED_API_KEY, label, output_dir=ROOT/"resources/data", is_save=True):
     """
     Fetches the data from FRED using the provided API key and data label.
     Saves the data to a JSON file.
@@ -480,7 +480,7 @@ def get_data_from_fred(FRED_API_KEY, label, output_dir='data', is_save=True):
     return 1
 
 
-def get_sp500_tickers(output_dir='data'):
+def get_sp500_tickers(output_dir=ROOT/"resources/data"):
     """
     Fetches the S&P 500 tickers from Wikipedia and saves them to a JSON file.
     """

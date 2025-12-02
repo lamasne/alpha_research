@@ -36,14 +36,15 @@ This project investigates whether a data-driven model can learn such effects and
 ## Methodology
 
 ### Model
-Supervised neural network predicting next-day option mid-price change.
+Supervised neural network predicting next-day option mid-price change. 
+To mitigate the dominant effect of underlying-price fluctuations and focus on more predictable components, I trained a second model on next-day bid minus intrinsic value, which is also more relevant for delta-hedging.
 
 **Output**
 - Predicted next-day option mid-price change
 
 **Example input features** (factors that could affect option pricing by market participants): 
 - Implied volatility (IV)
-- Forecasted volatility (e.g. GARCH)
+- Realized volatility (RV) forecasted by common models e.g. GARCH
 - Option mid-price
 - Price of underlying asset
 - Strike price and moneyness
