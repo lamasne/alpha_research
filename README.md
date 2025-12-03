@@ -15,88 +15,12 @@ This project investigates whether a data-driven model can learn such effects and
 **Goal.** Build and train such a model on historical SPY end-of-day options data, then backtest a simple long/short options strategy based on its predictions, including transaction costs.
 
 ## Data
+### Sources
 - Historical SPY options end-of-day (EOD) data from Kaggle:
     - 2010–2023: main dataset https://www.kaggle.com/datasets/benjaminbtang/spy-options-2010-2023-eod
     - 2020–2022: secondary dataset for cross-validation https://www.kaggle.com/datasets/kylegraupe/spy-daily-eod-options-quotes-2020-2022
 
 - Underlying SPY prices retrieved via `yfinance` and compared to Kaggle values for consistency.
-
-- Filtering criteria:
-    - Option volume above the 5th percentile to ensure liquidity
-    - Moneyness (absolute strike distance) below 10%
-Notes: Filtering out days to expiration (DTE) > 10 could be intereseting for European options since price must embed expected vol up to maturity (hard to predict --> maybe more random or less activity)
-    
-## Train / Validation / Test Split
-
-To avoid look-ahead bias, all splits are chronological.
-
-### Walk-Forward Validation (3 Folds)
-A rolling expanding-window scheme is used for hyperparameter tuning:
-
-- **Fold 1:**  
-  - Train: 2010–2017
-  - Validation: 2018
-
-- **Fold 2:**  
-  - Train: 2010–2018  
-  - Validation: 2019
-
-- **Fold 3:**  
-  - Train: 2010–2019
-  - Validation: 2020
-
-Hyperparameters are selected by averaging validation performance across the three folds.  
-No shuffling is applied at any stage.
-
-### Final Evaluation
-After tuning, the model is retrained on **2010–2020** and evaluated once on:
-
-- **Test:** 2021–2023
-
-All reported metrics come exclusively from the test period.
-
-
-## Methodology
-
-### Model
-Supervised neural network predicting next-day option mid-price change. 
-To mitigate the dominant effect of underlying-price fluctuations and focus on more predictable components, I trained a second model on next-day bid minus intrinsic value, which is also more relevant for delta-hedging.
-
-**Output**
-- Predicted next-day option mid-price change
-
-**Example input features** (factors that could affect option pricing by market participants): 
-- Implied volatility (IV)
-- Realized volatility (RV) forecasted by common models e.g. GARCH
-- Option mid-price
-- Price of underlying asset
-- Strike price and moneyness
-- Days to expiration
-- Risk-free rate
-- Greeks (e.g. Delta)
-- Volume / liquidity indicators
-- Market sentiment (e.g. quantified via NLP on social media)
-
-Note: since all Black–Scholes inputs are included among the features, the neural network should be able to reproduce the BS pricing function and potentially extend beyond it if additional effects are present.
-
-### Trading Strategy
-To isolate the effect of the model, a simple directional strategy is used:
-
-```
-signal = NN prediction of (next-day option price – current price)
-
-if signal > threshold → buy option
-if signal < -threshold → sell option
-```
-
-Transaction costs are incorporated in the backtest.
-
-## Backtest Framework
-To be defined:
-- Execution assumptions (EOD pricing, slippage model)
-- Performance metrics (Sharpe ratio, annualized return, drawdown, hit ratio)
-
-## Results
 
 ### Data exploration
 Trading activity is strongly concentrated around at-the-money strikes. As strike distance increases, traded volume decreases approximately exponentially (appearing nearly linear on the log-scale), as shown below.
@@ -120,10 +44,65 @@ To validate the underlying prices, I compared SPY close prices from the options 
 
 <img src="resources/plots/spy_close_comparison_2020_2021.png" width="600">
 
+### Filtering criteria:
+  - To ensure liquidity: Option volume above the 5th percentile 
+  - To prevent mixing fundamentally different regimes:
+    - Moneyness (absolute strike distance) below 10%
+    - days to expiration (DTE) < 30 
 
-### Model
 
-## GARCH forecasting
+## Methodology
+
+### NN Model
+Supervised neural network predicting next-day option mid-price change. 
+To mitigate the dominant effect of underlying-price fluctuations and focus on more predictable components, I trained a second model on next-day bid minus intrinsic value, which is also more relevant for delta-hedging.
+
+**Output**
+- Predicted next-day option mid-price change
+
+**Example input features** (factors that could affect option pricing by market participants): 
+- Implied volatility (IV)
+- Realized volatility (RV) forecasted by common models e.g. GARCH
+- Option mid-price
+- Price of underlying asset
+- Strike price and moneyness
+- Days to expiration
+- Risk-free rate
+- Greeks (e.g. Delta)
+- Volume / liquidity indicators
+- Market sentiment (e.g. quantified via NLP on social media)
+
+Note: since all Black–Scholes inputs are included among the features, the neural network should be able to reproduce the BS pricing function and potentially extend beyond it if additional effects are present.
+
+#### Train / Validation / Test Split
+
+To avoid look-ahead bias, all splits are chronological.
+
+A 3-fold walk-forward rolling expanding-window scheme is used for hyperparameter tuning:
+
+- **Fold 1:**  
+  - Train: 2010–2017
+  - Validation: 2018
+
+- **Fold 2:**  
+  - Train: 2010–2018  
+  - Validation: 2019
+
+- **Fold 3:**  
+  - Train: 2010–2019
+  - Validation: 2020
+
+Hyperparameters are selected by averaging validation performance across the three folds.  
+No shuffling is applied at any stage.
+
+After tuning, the model is retrained on **2010–2020** and evaluated once on:
+
+- **Test:** 2021–2023
+
+All reported metrics come exclusively from the test period.
+
+
+### GARCH forecasting
 The sample is split chronologically into:
 
 - **Training:** 2010–2018  
@@ -139,7 +118,26 @@ Red markers show **2-day-ahead GARCH volatility forecasts**, plotted every 5 tra
 <img src="resources/plots/garch_analysis_zoom.png" width="600">
 
 
-### Backtest
+
+### Trading Strategy
+To isolate the effect of the model, a simple directional strategy is used:
+
+```
+signal = NN prediction of (next-day option price – current price)
+
+if signal > threshold → buy option
+if signal < -threshold → sell option
+```
+
+Transaction costs are incorporated in the backtest.
+
+### Backtest Framework
+To be defined:
+- Execution assumptions (EOD pricing, slippage model)
+- Performance metrics (Sharpe ratio, annualized return, drawdown, hit ratio)
+
+
+### Results
 **To be completed upon backtest execution.**
 
 ## Conclusions & Future Work
