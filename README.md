@@ -137,7 +137,7 @@ To be defined:
 - Performance metrics (Sharpe ratio, annualized return, drawdown, hit ratio)
 
 
-### Results
+## Results
 **To be completed upon backtest execution.**
 
 ## Conclusions & Future Work
