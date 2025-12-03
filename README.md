@@ -18,12 +18,14 @@ This project investigates whether a data-driven model can learn such effects and
 - Historical SPY options end-of-day (EOD) data from Kaggle:
     - 2010–2023: main dataset https://www.kaggle.com/datasets/benjaminbtang/spy-options-2010-2023-eod
     - 2020–2022: secondary dataset for cross-validation https://www.kaggle.com/datasets/kylegraupe/spy-daily-eod-options-quotes-2020-2022
-- Underlying SPY prices retrieved via `yfinance` and compared to Kaggle values for consistency.
-- Filtering criteria:
-    - Days to expiration (DTE) between 2 and 10
-    - Moneyness (strike distance) between -5% and +5%
-    - Option volume above the 95th percentile to ensure liquidity
 
+- Underlying SPY prices retrieved via `yfinance` and compared to Kaggle values for consistency.
+
+- Filtering criteria:
+    - Option volume above the 5th percentile to ensure liquidity
+    - Moneyness (absolute strike distance) below 10%
+Notes: Filtering out days to expiration (DTE) > 10 could be intereseting for European options since price must embed expected vol up to maturity (hard to predict --> maybe more random or less activity)
+    
 ## Train / Validation / Test Split
 
 To avoid look-ahead bias, all splits are chronological.
@@ -98,7 +100,7 @@ To be defined:
 
 ### Data exploration
 Trading activity is strongly concentrated around at-the-money strikes. As strike distance increases, traded volume decreases approximately exponentially (appearing nearly linear on the log-scale), as shown below.
-<img src="plots/volume_to_strike_distance_SPY_calls_2010-2023.png" width="400">
+<img src="resources/plots/volume_to_strike_distance_SPY_calls_2010-2023.png" width="400">
 
 To verify the correctness of the implied volatility computation, I compared the calculated IV (`MY_IV`) against the dataset-provided IV values over random samples:
 
@@ -116,10 +118,26 @@ The custom IV computation shows consistent behavior, with a mean error of **7.01
 
 To validate the underlying prices, I compared SPY close prices from the options datasets against SPY closes from Yahoo Finance (yfinance) over 2020–2021. The three series overlap almost perfectly, confirming that the underlying data is consistent with market quotes.
 
-<img src="plots/spy_close_comparison_2020_2021.png" width="600">
+<img src="resources/plots/spy_close_comparison_2020_2021.png" width="600">
+
 
 ### Model
-**To be completed upon backtest execution.**
+
+## GARCH forecasting
+The sample is split chronologically into:
+
+- **Training:** 2010–2018  
+- **Test:** 2018–2022  
+
+Overall GARCH(1,1) fit and realized volatility:
+
+<img src="resources/plots/garch_analysis.png" width="600">
+
+Below is a zoom on the last two years of the test period.  
+Red markers show **2-day-ahead GARCH volatility forecasts**, plotted every 5 trading days:
+
+<img src="resources/plots/garch_analysis_zoom.png" width="600">
+
 
 ### Backtest
 **To be completed upon backtest execution.**
