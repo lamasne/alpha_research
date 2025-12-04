@@ -6,7 +6,7 @@ from src.utils import convert_to_polars_date, timeit
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-
+from pathlib import Path
 
 def run():
     X, y, feature_cols = prepare_data()
@@ -215,49 +215,58 @@ def prepare_data(
 
     return X, y, feature_cols
 
-
-def add_rv_garch(df, rv_garch_path, horizon=2):
+@timeit
+def add_rv_garch(df: pl.DataFrame, rv_garch_path: Path, horizon: int = 2) -> pl.DataFrame:
     """
-    Add GARCH realized volatility prediction (previously calculated) to df
-    """    
-    # Load garch rv predictions
+    Add GARCH(horizon) realized volatility forecasts to df.
+
+    Assumes rv_garch_path is a pickle of:
+        segments = [(anchor_t, ts, rvs), ...]
+    where:
+        - anchor_t: datetime of anchor quote (t)
+        - ts:      array of forecast dates (t+1, t+2, ...)
+        - rvs:     array of forecast vols for those dates, len == horizon
+    """
+    # Load GARCH RV predictions
     with open(rv_garch_path, "rb") as f:
         segments = pickle.load(f)
 
     print(f"Number of RV predictions: {len(segments)}")
     
-    # Check first and last segments are the right sizes
+    # Sanity: first/last segment have correct horizon
     if any([len(segments[j][i])!=horizon for i in [1,2] for j in [0,-1]]):
         raise Exception(f"RV input must be of horizon = {horizon}")
 
-    # Sanity check NEXT_QUOTE_DATE
+    # Sanity: NEXT_QUOTE_DATE matches between underlying and options data
     df = fix_date_mismatches(df, segments)
 
-    # Add GARCH-i cols and fill them
-    for i in range(horizon):
-        df = df.with_columns(pl.lit(None).alias(f"GARCH-{i+1}"))
+    ## Add GARCH-i cols to df
+    anchor_dates = []
+    garch_cols = [[] for _ in range(horizon)]    
     for anchor_t, _, rvs in segments:
-        anchor_date = convert_to_polars_date(anchor_t)
-        exprs = []
-        for i, rv in enumerate(rvs):
-            expr = pl.when(pl.col("QUOTE_DATE").dt.date() == anchor_date) \
-                .then(rv) \
-                .otherwise(pl.col(f"GARCH-{i+1}")) \
-                .alias(f"GARCH-{i+1}")
-            exprs.append(expr)
+        anchor_dates.append(convert_to_polars_date(anchor_t))
+        for i in range(horizon):
+            garch_cols[i].append(float(rvs[i]))
+    garch_df = pl.DataFrame(
+        {
+            "QUOTE_DATE": anchor_dates,
+            **{f"GARCH-{i+1}": garch_cols[i] for i in range(horizon)},
+        }
+    )
+    # Ensure types match: QUOTE_DATE in both dfs are Date
+    garch_df = garch_df.with_columns(pl.col("QUOTE_DATE").cast(pl.Date))
+    df = df.with_columns(pl.col("QUOTE_DATE").cast(pl.Date))
+    # Join GARCH forecasts to main df    
+    df = df.join(garch_df, on="QUOTE_DATE", how="left")
 
-        df = df.with_columns(exprs)
-
-    # Report null GARCH
+    # Report and drop missing GARCH rows
     col = "GARCH-1"
     non_null = df[col].is_not_null().sum()
     total = len(df)
     print("\nNo RV predictions for GARCH training window:")
-    print(f"{total - non_null} out of {total} {(1 - non_null/total)*100:.2f}% of rows have null value for GARCH and will be removed")
-
-    # Eliminate NA GARCH rows
-    garch_cols = [f"GARCH-{i}" for i in range(1, horizon+1)]
-    df = df.drop_nulls(subset=garch_cols)
+    print(f"{total - non_null} out of {total} rows {(1 - non_null/total)*100:.2f}%"
+          f"have null value for GARCH and will be removed")
+    df = df.drop_nulls(subset=[f"GARCH-{i+1}" for i in range(horizon)])
 
     return df
 
