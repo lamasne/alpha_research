@@ -2,7 +2,7 @@ import torch
 import os
 from dotenv import load_dotenv
 from .preprocessing.preprocessing import format_opt_data, filt_opt_df, IV_sanity_check, underlying_sanity_check, get_SPY_EOD_df
-from .modeling.rv_garch import predict_rolling_garch, predict_rolling_garch_test
+from .modeling.rv_garch import predict_rolling_garch, rolling_garch_study
 from .config import ROOT
 import src.modeling.option_net as option_net
 from .utils import timeit
@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     # df_calls = IV_sanity_check(df_filt_calls, opt_type="call", FRED_API_KEY=FRED_API_KEY)
     # underlying_sanity_check()
-    # predict_rolling_garch_test()
+    rolling_garch_study()
     
     # rv_garch_forecasts = predict_rolling_garch()
     model = option_net.run()

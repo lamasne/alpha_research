@@ -95,7 +95,7 @@ def predict_rolling_garch(
 
 
 @timeit
-def predict_rolling_garch_test(
+def rolling_garch_study(
     file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv",
     horizon: int = 5,
     rolling_windows = (5, 10, 30),
@@ -105,6 +105,9 @@ def predict_rolling_garch_test(
     predict next-day volatility. Then plot 'horizon'-day rolling realized
     volatility on the test period (H2 2021) with the 1-day forecast.
     """
+
+    print(f"Starting GARCH rolling forecast study with horizon={horizon} days for different rolling_windows={rolling_windows} days")
+
 
     # Load SPY EOD prices and format dates
     df = pd.read_csv(file_path)[["Date", "Close"]]
@@ -118,7 +121,7 @@ def predict_rolling_garch_test(
     returns   = df["Return"]
     ret_dates = df["Date"]
 
-    print(f"full range in time is {ret_dates.min()} to {ret_dates.max()}")
+    print(f"full range in time is {ret_dates.min().strftime('%Y-%m-%d')} to {ret_dates.max().strftime('%Y-%m-%d')}")
 
     # real_vols = [returns.rolling(window=rolling_window).std().shift(-rolling_window//2) for rolling_window in rolling_windows]
     real_vols = [returns.rolling(window=w).std() for w in rolling_windows]
