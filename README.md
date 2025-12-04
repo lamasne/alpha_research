@@ -44,18 +44,39 @@ To validate the underlying prices, I compared SPY close prices from the options 
 
 <img src="resources/plots/spy_close_comparison_2020_2021.png" width="600">
 
+#### NEXT_QUOTE_DAY Sanity Check
+
+| Metric | Value |
+|--------|-------|
+| Total days | 2765 |
+| Mismatches | 3 |
+| Match rate | 99.89% |
+
+**Mismatch Details:**
+
+| Date | Underlying Expects | Options Data Has | Event |
+|------|--------------|------------------|--------|
+| 2018-12-04 | 2018-12-06 | 2018-12-05 | National Day of Mourning for President George H. W. Bush. |
+| 2022-04-14 | 2022-04-18 | 2022-04-15 | Good Friday. |
+| 2022-11-23 | 2022-11-25 | 2022-11-24 | Thanksgiving (U.S.). |
+
+**Conclusion:** All 3 mismatches correspond to U.S. market holidays and were skipped (i.e. changed to match underlying dates).
+
 ### Filtering criteria:
-  - To ensure liquidity: Option volume above the 5th percentile 
+  - To ensure liquidity: Option volume above the 5th percentile of the sample  
   - To prevent mixing fundamentally different regimes:
-    - Moneyness (absolute strike distance) below 10%
-    - days to expiration (DTE) < 30 
+    - |STRIKE_DISTANCE_PCT| < 10% 
+    - Focus on theta-regime (DTE < 30) 
+
+**Next steps** Focus on vega-regime (DTE>30) or let DTE open
 
 
 ## Methodology
 
 ### NN Model
 Supervised neural network predicting next-day option mid-price change. 
-To mitigate the dominant effect of underlying-price fluctuations and focus on more predictable components, I trained a second model on next-day bid minus intrinsic value, which is also more relevant for delta-hedging.
+
+**Next steps** To mitigate the dominant effect of underlying-price fluctuations and focus on more predictable components, I trained a second model on next-day bid minus intrinsic value, which is also more relevant for delta-hedging.
 
 **Output**
 - Predicted next-day option mid-price change
