@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import traceback
 from curl_cffi import requests as curl_requests
-from .yfinance_cookie_patch import patch_yfdata_cookie_basic
+from pathlib import Path
 import time
 import random
 import pandas as pd
@@ -12,60 +12,95 @@ from fredapi import Fred
 import json
 import numpy as np
 import scipy.stats as si
+
+from .yfinance_cookie_patch import patch_yfdata_cookie_basic
 from scipy.optimize import brentq
 from src.config import ROOT
+from src.utils import timeit
+
 
 ######################
 # Data preprocessing #
 ######################
 
-def format_opt_data(dir=ROOT/"resources/data/dataset1", 
-input_filename="SPY Options 2010-2023 EOD.csv",
-volume_thresh = 0.95):
+@timeit
+def format_opt_data(
+    dir: Path = ROOT / "resources/data/dataset1",
+    input_filename: str = "SPY Options 2010-2023 EOD.csv",
+    volume_thresh: float = 0.05,   # 5th percentile
+):
     """
-    Preprocess raw options data from Kaggle
-    Filter via volume threshold, split into calls and puts, and format col names for consistency
+    Preprocess raw options data from Kaggle.
+    - Split into calls / puts and normalize column names
+    - Keep only columns of interest
+    - Filter by volume quantile
     """
-    spy_file = f"{dir}/{input_filename}"
-    df = pd.read_csv(spy_file)
-    
+
+    spy_file = dir / input_filename
+    df = pl.read_csv(spy_file)
+
+    print(f"initial len(df) both calls and puts together: {df.height}")
+
     # Format col names and keep only cols of interest
-    df.columns = df.columns.str.strip("[] ").str.strip()
+    new_cols = [c.strip("[] ").strip() for c in df.columns]
+    df = df.rename(dict(zip(df.columns, new_cols)))
 
-    df.rename(columns={"QUOTE_UNIXTIME": "QUOTE_UNIX"}, inplace=True)
+    df = df.rename({"QUOTE_UNIXTIME": "QUOTE_UNIX"})
+
     features_of_interest = [
-        'QUOTE_UNIX', 'EXPIRE_UNIX', 'DTE', 
-        'UNDERLYING_LAST', 'STRIKE', 'STRIKE_DISTANCE_PCT',
-        'C_VOLUME', 'C_BID', 'C_ASK', 'C_IV',
-        'P_VOLUME', 'P_BID', 'P_ASK', 'P_IV'
+        "QUOTE_UNIX", "EXPIRE_UNIX", "DTE",
+        "UNDERLYING_LAST", "STRIKE", "STRIKE_DISTANCE_PCT",
+        "C_VOLUME", "C_BID", "C_ASK", "C_IV",
+        "P_VOLUME", "P_BID", "P_ASK", "P_IV",
     ]
-    df = df[features_of_interest]
+    df = df.select(features_of_interest)
 
-    # Convert volumes, bid and ask columns to numeric
-    for col in ['C_VOLUME', 'C_BID', 'C_ASK', 'C_IV', 'P_VOLUME', 'P_BID', 'P_ASK', 'P_IV']:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+    # Cast to numeric (non-numeric will become null)
+    num_cols = ["C_VOLUME", "C_BID", "C_ASK", "C_IV",
+                "P_VOLUME", "P_BID", "P_ASK", "P_IV"]
+    df = df.with_columns([pl.col(c).cast(pl.Float64) for c in num_cols])
 
-    # Analyze strike distance volume
-    strike_distance_volume_analysis(df)
+    # --- Optional: analysis in pandas if you really want it ---
+    # strike_distance_volume_analysis(df.to_pandas())
 
+    # Quantiles (once per side)
+    c_q = df.select(pl.col("C_VOLUME").quantile(volume_thresh)).item()
+    p_q = df.select(pl.col("P_VOLUME").quantile(volume_thresh)).item()
+
+    # Calls
     df_calls = (
-        df.loc[df["C_VOLUME"] > df["C_VOLUME"].quantile(volume_thresh)]
-        .drop(columns=["P_VOLUME", "P_BID", "P_ASK", "P_IV"])
-        .rename(columns={"C_VOLUME": "VOLUME", "C_BID": "BID", "C_ASK": "ASK", "C_IV": "IV"})
-        .copy()
+        df
+        .filter(pl.col("C_VOLUME") > c_q)
+        .select([
+            "QUOTE_UNIX", "EXPIRE_UNIX", "DTE",
+            "UNDERLYING_LAST", "STRIKE", "STRIKE_DISTANCE_PCT",
+            pl.col("C_VOLUME").alias("VOLUME"),
+            pl.col("C_BID").alias("BID"),
+            pl.col("C_ASK").alias("ASK"),
+            pl.col("C_IV").alias("IV"),
+        ])
     )
+
+    # Puts
     df_puts = (
-        df.loc[df["P_VOLUME"] > df["P_VOLUME"].quantile(volume_thresh)]
-        .drop(columns=["C_VOLUME", "C_BID", "C_ASK", "C_IV"])
-        .rename(columns={"P_VOLUME": "VOLUME", "P_BID": "BID", "P_ASK": "ASK", "P_IV": "IV"})
-        .copy()
+        df
+        .filter(pl.col("P_VOLUME") > p_q)
+        .select([
+            "QUOTE_UNIX", "EXPIRE_UNIX", "DTE",
+            "UNDERLYING_LAST", "STRIKE", "STRIKE_DISTANCE_PCT",
+            pl.col("P_VOLUME").alias("VOLUME"),
+            pl.col("P_BID").alias("BID"),
+            pl.col("P_ASK").alias("ASK"),
+            pl.col("P_IV").alias("IV"),
+        ])
     )
 
     # Save
-    df_calls.to_csv(f"{dir}/calls.csv", index=False)
-    df_puts.to_csv(f"{dir}/puts.csv", index=False)
+    df_calls.write_csv(dir / "calls.csv")
+    df_puts.write_csv(dir / "puts.csv")
 
     return df_calls, df_puts
+
 
 
 def strike_distance_volume_analysis(df):
@@ -98,15 +133,17 @@ def strike_distance_volume_analysis(df):
     plt.yscale("log")
     plt.title("Traded volume per strike distance percentage")
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
 
-
+@timeit
 def filt_opt_df(
     dir=ROOT / "resources/data/dataset1",
     filename="calls.csv",
-    start_date="2012-01-01",
-    end_date="2021-12-31"
+    DET_range = [2,30],
+    K_dist_max = 0.1,
+    start_date = None, # "2010-01-01"
+    end_date = None
 ):
     """
     Prepare training set
@@ -125,21 +162,30 @@ def filt_opt_df(
         .alias("EXPIRE_DATE"),
     ])
 
-    # Filter DTE in [2, 10]
-    df = df.filter(
-        (pl.col("DTE") >= 2) & (pl.col("DTE") <= 10)
-    )
+    # Filter DTE 
+    if DET_range is not None: 
+        len_bef = len(df)
+        df = df.filter(
+            (pl.col("DTE") >= DET_range[0]) & (pl.col("DTE") <= DET_range[1])
+        )
+        len_aft = len(df)
+        print(f"{filename} - len(df) went from {len_bef} to {len_aft} (-{(len_bef-len_aft)/len_bef*100:.2f}%) after DTE filter")
 
-    # Filter |strike distance| ≤ 5%
-    df = df.filter(
-        pl.col("STRIKE_DISTANCE_PCT").abs() <= 0.05
-    )
+    # Filter strike distance
+    if K_dist_max is not None: 
+        len_bef = len(df)
+        df = df.filter(
+            pl.col("STRIKE_DISTANCE_PCT").abs() <= K_dist_max
+        )
+        len_aft = len(df)
+        print(f"{filename} - len(df) went from {len_bef} to {len_aft} (-{(len_bef-len_aft)/len_bef*100:.2f}%) after K_dist filter")
 
     # Filter by QUOTE_DATE range
-    df = df.filter(
-        (pl.col("QUOTE_DATE") >= pl.lit(start_date).str.strptime(pl.Date)) &
-        (pl.col("QUOTE_DATE") <= pl.lit(end_date).str.strptime(pl.Date))
-    )
+    if start_date is not None and end_date is not None:
+        df = df.filter(
+            (pl.col("QUOTE_DATE") >= pl.lit(start_date).str.strptime(pl.Date)) &
+            (pl.col("QUOTE_DATE") <= pl.lit(end_date).str.strptime(pl.Date))
+        )
 
     # Sort so that each option contract (same strike + expiry) appears as a time series
     df = df.with_columns([
