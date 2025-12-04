@@ -1,11 +1,18 @@
+import pickle
 from src.config import ROOT
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from arch import arch_model
+from src.utils import timeit
 
 
-def RV_GARCH_prediction(file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv", horizon = 2, train_size=252):    
+def predict_rolling_garch(
+    file_path = ROOT/"resources/data/yf/yf_spy_prices_2010_2022.csv", 
+    out_dir = ROOT/"resources/data",
+    horizon = 2, 
+    train_size=252*2,
+):    
     """
     Returns {horizon}-day forecast of conditional volatility for each time in file {file_path} 
     based on garch model with a rolling window training dataset of size {train_size}
@@ -42,8 +49,7 @@ def RV_GARCH_prediction(file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2
         fc = res.forecast(horizon=horizon)
         fc_vols = np.sqrt(fc.variance.values[-1])
         fc_dates = ret_dates[t:t + horizon].to_numpy()  # Dates for forecast
-        
-        forecast_segments.append((fc_dates, fc_vols))
+        forecast_segments.append((t-1, fc_dates, fc_vols))
 
     # Plot forecast_segments
     def plot_GARCH(w=5):
@@ -51,34 +57,57 @@ def RV_GARCH_prediction(file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2
         cv = arch_model(returns, vol="GARCH", p=1, q=1).fit(disp="off").conditional_volatility
 
         fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(ret_dates, rv, label=f"Realized {w}-day rolling volatility", linewidth=1)
-        ax.plot(ret_dates, cv, label="Cond volatility", linewidth=1)
+        ax.plot(ret_dates, rv, label=f"Realized {w}-day rolling volatility", linewidth=1, color="green")
+        ax.plot(ret_dates, cv, label="Cond. volatility (CV) ", linewidth=1, color="blue", linestyle="--")
 
-        for s in forecast_segments:
-            ax.plot(s[0], s[1], marker='*', markersize=2)
-
+        step = 5
+        for i, (anchor_idx, fc_dates, fc_vols) in enumerate(forecast_segments[::step]):
+            anchor_date = ret_dates.iloc[anchor_idx]
+            anchor_cv   = cv.iloc[anchor_idx]
+            plot_dates = [anchor_date] + list(fc_dates)
+            plot_vols = [anchor_cv] + list(fc_vols)
+            ax.plot(
+                plot_dates,
+                plot_vols,
+                marker="*",
+                color="red",
+                markersize=3,
+                label=f"CV anchor + {horizon}-day GARCH" if i == 0 else None,
+            )
+            
         ax.legend()
         ax.set_xlabel("Date")
         ax.set_ylabel("Realized Volatility")
         ax.grid(True)
-        plt.show()
 
     plot_GARCH()
+
+    # Save forecast_segments with pickle
+    for i, (anchor_idx, fc_dates, fc_vols) in enumerate(forecast_segments):
+        forecast_segments[i] = (ret_dates.iloc[anchor_idx], fc_dates, fc_vols)    
+    out_path = out_dir / f"rv_garch_h{horizon}_train{train_size//252}.pkl"
+    with open(out_path, "wb") as f:
+        pickle.dump(forecast_segments, f)
+
+    plt.show()
 
     return forecast_segments
 
 
-
-def predict_1day_volatility_test(file_path = ROOT/"resources/data/yf/yf_spy_prices_2010_2022.csv", horizon = 5, rolling_windows=[5, 10, 30]):
+@timeit
+def predict_rolling_garch_test(
+    file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv",
+    horizon: int = 5,
+    rolling_windows = (5, 10, 30),
+):
     """
-    Fit a GARCH(1,1) model on EOD SPY returns (2020–H1 2021) and
+    Fit a rolling-window GARCH(1,1) model on EOD SPY returns (2020–H1 2021) and
     predict next-day volatility. Then plot 'horizon'-day rolling realized
     volatility on the test period (H2 2021) with the 1-day forecast.
     """
 
     # Load SPY EOD prices and format dates
-    df = pd.read_csv(file_path)
-    df = df[["Date", "Close"]]
+    df = pd.read_csv(file_path)[["Date", "Close"]]
     df["Date"] = pd.to_datetime(df["Date"], utc=True)
     df["Date"] = df["Date"].dt.tz_convert(None).dt.normalize()
     df.sort_values("Date", inplace=True)
@@ -88,14 +117,15 @@ def predict_1day_volatility_test(file_path = ROOT/"resources/data/yf/yf_spy_pric
     df = df.dropna(subset=["Return"])
     returns   = df["Return"]
     ret_dates = df["Date"]
+
+    print(f"full range in time is {ret_dates.min()} to {ret_dates.max()}")
+
     # real_vols = [returns.rolling(window=rolling_window).std().shift(-rolling_window//2) for rolling_window in rolling_windows]
     real_vols = [returns.rolling(window=w).std() for w in rolling_windows]
 
 
-    print(f"full range in time is {ret_dates.min()} to {ret_dates.max()}")
-
     # ---------- Train / test split ----------
-    init_train_mask = (ret_dates >= "2010-01-01") & (ret_dates <= "2022-06-30")
+    init_train_mask = (ret_dates >= "2020-01-01") & (ret_dates <= "2022-06-30")
     test_mask = (ret_dates >= "2022-07-01") & (ret_dates <= "2022-12-31")
     init_train_ret   = returns[init_train_mask]
     test_ret    = returns[test_mask]
