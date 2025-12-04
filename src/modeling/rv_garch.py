@@ -6,12 +6,13 @@ import numpy as np
 from arch import arch_model
 from src.utils import timeit
 
-
+@timeit
 def predict_rolling_garch(
     file_path = ROOT/"resources/data/yf/yf_spy_prices_2010_2022.csv", 
     out_dir = ROOT/"resources/data",
     horizon = 2, 
     train_size=252*2,
+    is_plot=True,
 ):    
     """
     Returns {horizon}-day forecast of conditional volatility for each time in file {file_path} 
@@ -62,8 +63,8 @@ def predict_rolling_garch(
 
         step = 5
         for i, (anchor_idx, fc_dates, fc_vols) in enumerate(forecast_segments[::step]):
-            anchor_date = ret_dates.iloc[anchor_idx]
-            anchor_cv   = cv.iloc[anchor_idx]
+            anchor_date = ret_dates[anchor_idx]
+            anchor_cv   = cv[anchor_idx]
             plot_dates = [anchor_date] + list(fc_dates)
             plot_vols = [anchor_cv] + list(fc_vols)
             ax.plot(
@@ -80,7 +81,8 @@ def predict_rolling_garch(
         ax.set_ylabel("Realized Volatility")
         ax.grid(True)
 
-    plot_GARCH()
+    if is_plot:
+        plot_GARCH()
 
     # Save forecast_segments with pickle
     for i, (anchor_idx, fc_dates, fc_vols) in enumerate(forecast_segments):
