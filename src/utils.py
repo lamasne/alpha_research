@@ -1,11 +1,38 @@
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
-from src.config import ROOT
+from src.config import ROOT, full_logger, TrainingConfig
 import time
 import datetime
 import numpy as np
 from functools import wraps
+
+
+def add_config_to_plot(fig, run_config: TrainingConfig):
+
+    fig.tight_layout(rect=[0, 0.05, 1, 0.95])  # [left, bottom, right, top]
+
+    footer_text = " | ".join(f"{k}: {v}" for k, v in run_config.__dict__.items())
+
+    fig.text(
+        0.02, 0.02, f"Training config: {footer_text}",
+        fontsize=8,
+        fontfamily='monospace',
+        ha='left',
+        wrap=True,
+        bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+    )
+
+
+
+def create_new_filename(dir, base_name, extension):
+    i = 0
+    while True:
+        new_path = dir / f"{base_name}_{i}.{extension}"
+        if not new_path.exists():
+            break
+        i += 1
+    return new_path
 
 
 def convert_to_polars_date(date_val):
@@ -30,7 +57,7 @@ def timeit(func):
         start_time = time.perf_counter()
         result = func(*args, **kwargs)  # Call the original function
         end_time = time.perf_counter()
-        print(f"Time taken by {func.__name__}: {end_time - start_time:.3f} seconds")
+        full_logger.info(f"Time taken by {func.__name__}: {end_time - start_time:.3f} seconds")
         return result
     return wrapper
 

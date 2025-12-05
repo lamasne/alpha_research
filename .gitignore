@@ -3,6 +3,8 @@
 
 # Data files
 data/
+logs/
+
 
 # Python-generated files
 __pycache__/

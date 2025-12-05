@@ -15,7 +15,7 @@ import scipy.stats as si
 
 from .yfinance_cookie_patch import patch_yfdata_cookie_basic
 from scipy.optimize import brentq
-from src.config import ROOT
+from src.config import ROOT, full_logger, TrainingConfig
 from src.utils import timeit
 
 
@@ -27,7 +27,7 @@ from src.utils import timeit
 def format_opt_data(
     dir: Path = ROOT / "resources/data/dataset1",
     input_filename: str = "SPY Options 2010-2023 EOD.csv",
-    volume_thresh: float = 0.05,   # 5th percentile
+    is_vol_analysis: bool = False,
 ):
     """
     Preprocess raw options data from Kaggle.
@@ -38,62 +38,52 @@ def format_opt_data(
 
     spy_file = dir / input_filename
     df = pl.read_csv(spy_file)
-
-    print(f"initial len(df) both calls and puts together: {df.height}")
+    full_logger.info(f"Initial number of options data points: {df.height:,}")
 
     # Format col names and keep only cols of interest
     new_cols = [c.strip("[] ").strip() for c in df.columns]
     df = df.rename(dict(zip(df.columns, new_cols)))
-
     df = df.rename({"QUOTE_UNIXTIME": "QUOTE_UNIX"})
-
-    features_of_interest = [
+    features_dupl1 = ["VOLUME", "BID", "ASK", "IV", "DELTA", "GAMMA", "VEGA", "THETA", "RHO",]
+    features_dupl2 = [f"{t}_{feat}" for feat in features_dupl1 for t in ["C","P"]]
+    features_selected = features_dupl2 + [
         "QUOTE_UNIX", "EXPIRE_UNIX", "DTE",
         "UNDERLYING_LAST", "STRIKE", "STRIKE_DISTANCE_PCT",
-        "C_VOLUME", "C_BID", "C_ASK", "C_IV",
-        "P_VOLUME", "P_BID", "P_ASK", "P_IV",
     ]
-    df = df.select(features_of_interest)
-
-    # Cast to numeric (non-numeric will become null)
-    num_cols = ["C_VOLUME", "C_BID", "C_ASK", "C_IV",
-                "P_VOLUME", "P_BID", "P_ASK", "P_IV"]
-    df = df.with_columns([pl.col(c).cast(pl.Float64) for c in num_cols])
-
-    # --- Optional: analysis in pandas if you really want it ---
-    # strike_distance_volume_analysis(df.to_pandas())
-
-    # Quantiles (once per side)
-    c_q = df.select(pl.col("C_VOLUME").quantile(volume_thresh)).item()
-    p_q = df.select(pl.col("P_VOLUME").quantile(volume_thresh)).item()
-
-    # Calls
-    df_calls = (
-        df
-        .filter(pl.col("C_VOLUME") > c_q)
-        .select([
-            "QUOTE_UNIX", "EXPIRE_UNIX", "DTE",
-            "UNDERLYING_LAST", "STRIKE", "STRIKE_DISTANCE_PCT",
-            pl.col("C_VOLUME").alias("VOLUME"),
-            pl.col("C_BID").alias("BID"),
-            pl.col("C_ASK").alias("ASK"),
-            pl.col("C_IV").alias("IV"),
-        ])
+    df = df.select(features_selected)
+    df = df.with_columns([pl.col(c).cast(pl.Float64) for c in features_dupl2])
+    df = df.with_columns(
+        (pl.col("STRIKE_DISTANCE_PCT") * 100).alias("STRIKE_DISTANCE_PCT")
     )
 
-    # Puts
-    df_puts = (
-        df
-        .filter(pl.col("P_VOLUME") > p_q)
-        .select([
-            "QUOTE_UNIX", "EXPIRE_UNIX", "DTE",
-            "UNDERLYING_LAST", "STRIKE", "STRIKE_DISTANCE_PCT",
-            pl.col("P_VOLUME").alias("VOLUME"),
-            pl.col("P_BID").alias("BID"),
-            pl.col("P_ASK").alias("ASK"),
-            pl.col("P_IV").alias("IV"),
-        ])
-    )
+    # --- Optional: volumme analysis ---
+    if is_vol_analysis:
+        strike_distance_volume_analysis(df.to_pandas())
+
+
+    vol_thresh = TrainingConfig().volume_pctl_thresh
+    for t in ["C","P"]:
+        q = df.select(pl.col(f"{t}_VOLUME").quantile(vol_thresh)).item()
+        full_logger.info(f"Volume threshold for {"calls" if t == "C" else "puts"}: {q} ({vol_thresh:.2%} percentile)")
+        type_df = (
+            df
+            .filter(pl.col(f"{t}_VOLUME") > q)
+            .select([
+                "QUOTE_UNIX", "EXPIRE_UNIX", "DTE",
+                "UNDERLYING_LAST", "STRIKE", "STRIKE_DISTANCE_PCT",
+                *[
+                    pl.col(f"{t}_{feat}").alias(feat)
+                    for feat in features_dupl1
+                ],
+            ])
+        )
+        if t == "C":
+            df_calls = type_df
+        else:
+            df_puts = type_df
+
+    full_logger.info(f"Number of puts data points after spliting and volume filtering: {df_puts.height:,}")
+    full_logger.info(f"Number of calls data points after spliting and volume filtering: {df_calls.height:,}")
 
     # Save
     df_calls.write_csv(dir / "calls.csv")
@@ -133,96 +123,14 @@ def strike_distance_volume_analysis(df):
     plt.yscale("log")
     plt.title("Traded volume per strike distance percentage")
     plt.tight_layout()
-    # plt.show()
-
-
-@timeit
-def filt_opt_df(
-    dir=ROOT / "resources/data/dataset1",
-    filename="calls.csv",
-    DET_range = [2,30],
-    K_dist_max = 0.1,
-    start_date = None, # "2010-01-01"
-    end_date = None
-):
-    """
-    Prepare training set
-    """
-
-    input_path = f"{dir}/{filename}"
-    df = pl.read_csv(input_path)
-
-    # Convert UNIX timestamps → date columns
-    df = df.with_columns([
-        pl.from_epoch(pl.col("QUOTE_UNIX"), time_unit="s")
-        .cast(pl.Date)
-        .alias("QUOTE_DATE"),
-        pl.from_epoch(pl.col("EXPIRE_UNIX"), time_unit="s")
-        .cast(pl.Date)
-        .alias("EXPIRE_DATE"),
-    ])
-
-    # Filter DTE 
-    if DET_range is not None: 
-        len_bef = len(df)
-        df = df.filter(
-            (pl.col("DTE") >= DET_range[0]) & (pl.col("DTE") <= DET_range[1])
-        )
-        len_aft = len(df)
-        print(f"{filename} - len(df) went from {len_bef} to {len_aft} (-{(len_bef-len_aft)/len_bef*100:.2f}%) after DTE filter")
-
-    # Filter strike distance
-    if K_dist_max is not None: 
-        len_bef = len(df)
-        df = df.filter(
-            pl.col("STRIKE_DISTANCE_PCT").abs() <= K_dist_max
-        )
-        len_aft = len(df)
-        print(f"{filename} - len(df) went from {len_bef} to {len_aft} (-{(len_bef-len_aft)/len_bef*100:.2f}%) after K_dist filter")
-
-    # Filter by QUOTE_DATE range
-    if start_date is not None and end_date is not None:
-        df = df.filter(
-            (pl.col("QUOTE_DATE") >= pl.lit(start_date).str.strptime(pl.Date)) &
-            (pl.col("QUOTE_DATE") <= pl.lit(end_date).str.strptime(pl.Date))
-        )
-
-    # Sort so that each option contract (same strike + expiry) appears as a time series
-    df = df.with_columns([
-        (pl.col("EXPIRE_DATE").cast(pl.Utf8) + "_" + pl.col("STRIKE").cast(pl.Utf8))
-            .alias("CONTRACT_ID")
-            .cast(pl.Categorical)
-    ])
-    df = df.sort(["CONTRACT_ID", "QUOTE_DATE"])
-
-    # Select + reorder columns
-    df = df.select([
-        "CONTRACT_ID",
-        "EXPIRE_DATE",
-        "QUOTE_DATE",
-        "DTE",
-        "UNDERLYING_LAST",
-        "STRIKE",
-        "STRIKE_DISTANCE_PCT",
-        "VOLUME",
-        "BID",
-        "ASK",
-        "IV",
-    ])
-
-    # Save output
-    output_path = f"{dir}/filt_{filename}"
-    df.write_csv(output_path)
-
-    return df
-
+    plt.show()
 
 
 #################
 # Sanity checks #
 #################
-
-def IV_sanity_check(df, opt_type='call', nb_rows=200, trading_days_per_year=365.0, FRED_API_KEY=None):
+@timeit
+def IV_sanity_check(df, opt_type='call', nb_rows=1000, trading_days_per_year=365.0, FRED_API_KEY=None):
     """
     Calculate implied volatility from options dataframe
     """
@@ -241,8 +149,17 @@ def IV_sanity_check(df, opt_type='call', nb_rows=200, trading_days_per_year=365.
     # Map quote dates to risk-free rates, and convert to decimal
     rf_series = pd.Series(rfs)
     rf_series.index = pd.to_datetime(rf_series.index).to_period("M")
-    df["RF"] = df["QUOTE_DATE"].dt.to_period("M").map(rf_series) / 100 
-
+    df["RF"] = (
+        pd.to_datetime(df["QUOTE_UNIX"], unit="s")
+        .dt.to_period("M")
+        .map(rf_series)
+        / 100
+    )
+    # print(
+    #     df.assign(
+    #         QUOTE_YM = pd.to_datetime(df["QUOTE_UNIX"], unit="s").dt.strftime("%Y-%m")
+    #     )[["QUOTE_YM", "QUOTE_UNIX", "RF"]]
+    # )
     def iv_row(row):
         C = (row["BID"] + row["ASK"]) / 2.0
         S = row["UNDERLYING_LAST"]
@@ -316,7 +233,7 @@ def compute_BS_price(S, K, T, r, sigma, opt_type):
 
     return option_price
 
-
+@timeit
 def underlying_sanity_check(dir=ROOT/"resources/data"):
     """ Compare Kaggle datasets with YFinance data """
     ## Load Kaggle dataset1
