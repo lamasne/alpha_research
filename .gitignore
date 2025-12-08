@@ -5,6 +5,8 @@
 data/
 logs/
 
+# Re-include (don't ignore) the specific folder path
+!data/outputs/selected_plots/
 
 # Python-generated files
 __pycache__/
