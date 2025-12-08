@@ -1,5 +1,5 @@
 import pickle
-from src.config import ROOT
+from src.config import inputs_dir, outputs_dir
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
@@ -8,8 +8,7 @@ from src.utils import timeit
 
 @timeit
 def predict_rolling_garch(
-    file_path = ROOT/"resources/data/yf/yf_spy_prices_2010_2022.csv", 
-    out_dir = ROOT/"resources/data",
+    file_path = inputs_dir / "yf/yf_spy_prices_2010_2022.csv", 
     horizon = 2, 
     train_size=252*2,
     is_plot=True,
@@ -87,7 +86,7 @@ def predict_rolling_garch(
     # Save forecast_segments with pickle
     for i, (anchor_idx, fc_dates, fc_vols) in enumerate(forecast_segments):
         forecast_segments[i] = (ret_dates.iloc[anchor_idx], fc_dates, fc_vols)    
-    out_path = out_dir / f"rv_garch_h{horizon}_train{train_size//252}.pkl"
+    out_path = outputs_dir / f"rv_garch_h{horizon}_train{train_size//252}.pkl"
     with open(out_path, "wb") as f:
         pickle.dump(forecast_segments, f)
 
@@ -98,7 +97,7 @@ def predict_rolling_garch(
 
 @timeit
 def rolling_garch_study(
-    file_path = ROOT/"resources/data/yf/yf_spy_prices_2020_2022.csv",
+    file_path = inputs_dir / "yf/yf_spy_prices_2020_2022.csv",
     horizon: int = 5,
     rolling_windows = (5, 10, 30),
 ):

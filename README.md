@@ -24,7 +24,7 @@ This project investigates whether a data-driven model can learn such effects and
 
 ### Data exploration
 Trading activity is strongly concentrated around at-the-money strikes. As strike distance increases, traded volume decreases approximately exponentially (appearing nearly linear on the log-scale), as shown below.
-<img src="resources/plots/volume_to_strike_distance_SPY_calls_2010-2023.png" width="400">
+<img src="resources/data/outputs/selected_plots/volume_to_strike_distance_SPY_calls_2010-2023.png" width="400">
 
 To verify the correctness of the implied volatility computation, I compared the calculated IV (`MY_IV`) against the dataset-provided IV values over random samples:
 
@@ -42,7 +42,7 @@ The custom IV computation shows consistent behavior, with a mean error of **7.01
 
 To validate the underlying prices, I compared SPY close prices from the options datasets against SPY closes from Yahoo Finance (yfinance) over 2020–2021. The three series overlap almost perfectly, confirming that the underlying data is consistent with market quotes.
 
-<img src="resources/plots/spy_close_comparison_2020_2021.png" width="600">
+<img src="resources/data/outputs/selected_plots/spy_close_comparison_2020_2021.png" width="600">
 
 #### NEXT_QUOTE_DAY Sanity Check
 
@@ -63,65 +63,84 @@ To validate the underlying prices, I compared SPY close prices from the options 
 **Conclusion:** All 3 mismatches correspond to U.S. market holidays and were skipped (i.e. changed to match underlying dates).
 
 ### Filtering criteria:
-  - To ensure liquidity: Option volume above the 5th percentile of the sample  
+  - To ensure liquidity: Option volume above the 10th percentile of the sample  
   - To prevent mixing fundamentally different regimes:
-    - |STRIKE_DISTANCE_PCT| < 10% 
-    - Focus on theta-regime (DTE < 30) 
-
-**Next steps** Focus on vega-regime (DTE>30) or let DTE open
+    - |STRIKE_DISTANCE_PCT| < 5% 
+    - Tried both theta-regime (DTE < 30) and vega-regime (30 < DTE), ended up chosing DTE < 30
 
 
 ## Methodology
 
 ### NN Model
-Supervised neural network predicting next-day option mid-price change. 
 
-**Next steps** To mitigate the dominant effect of underlying-price fluctuations and focus on more predictable components, I trained a second model on next-day bid minus intrinsic value, which is also more relevant for delta-hedging.
+#### Output / target
+To mitigate the dominant effect of underlying-price fluctuations and focus on more predictable components (which is also more relevant for delta-hedging)
+- Next-day extrinsic value of seller-side put option i.e. (BID - K + S)
 
-**Output**
-- Predicted next-day option mid-price change
+Target is optionally log-transformed (depending on config)
 
-**Example input features** (factors that could affect option pricing by market participants): 
-- Implied volatility (IV)
-- Realized volatility (RV) forecasted by common models e.g. GARCH
-- Option mid-price
-- Price of underlying asset
-- Strike price and moneyness
-- Days to expiration
-- Risk-free rate
-- Greeks (e.g. Delta)
-- Volume / liquidity indicators
+#### Input features (factors that could affect option pricing by market participants): 
+- "EXTRINSIC_BID"
+- "STRIKE"
+- "UNDERLYING_LAST" # Last traded price of SPY (option's underlying asset)
+- "MID"
+- "SPREAD"
+- "DTE" # Days to expiration
+- "GARCH-1", "GARCH-2" # Realized volatility (RV) forecasted by common models e.g. GARCH
+- "IV" # BS Implied volatility
+- "RF" # Risk-free rate
+- "LOG_VOLUME"
+- "LOG_MONEYNESS"
+- "DELTA", "GAMMA", "VEGA", "THETA", "RHO" # Greeks
+
+All continuous features are standardized (mean = 0, std = 1).
+
+**Next steps** Add:
 - Market sentiment (e.g. quantified via NLP on social media)
+- Momentum indicator (e.g. previous return of underlying or MA crossing signal)
 
-Note: since all Black–Scholes inputs are included among the features, the neural network should be able to reproduce the BS pricing function and potentially extend beyond it if additional effects are present.
+Note: since all Black–Scholes inputs are included among the features, the neural network should ideally be able to reproduce the BS pricing function and potentially extend beyond it if additional effects are present.
+
+#### Architecture
+Two 64-node layers perceptron with dropouts and normalization layers. 
 
 #### Train / Validation / Test Split
 
-To avoid look-ahead bias, all splits are chronological.
+The dataset spans **2010–2022** (2615 trading days) and contains **390,251 datapoints** after filtering, with increasing density in later years:
+- $\leq$ 2018: 93,307 (**23.9%**)
+- $\leq$ 2019: 143,283 (**36.7%**)
+- $\leq$ 2020: 198,209 (**50.8%**)
+- $\leq$ 2021: 301,508 (**77.3%**)
+- $\leq$ 2022: 390,251 (**100.0%**)
 
-A 3-fold walk-forward rolling expanding-window scheme is used for hyperparameter tuning:
-
+A **3-fold walk-forward expanding-window scheme** is usedto respect time ordering and select hyperparameters that are robust across regimes.
 - **Fold 1:**  
-  - Train: 2010–2017
-  - Validation: 2018
-
-- **Fold 2:**  
-  - Train: 2010–2018  
+  - Train: 2010–2018
   - Validation: 2019
-
-- **Fold 3:**  
+- **Fold 2:**  
   - Train: 2010–2019
   - Validation: 2020
+- **Fold 3:**  
+  - Train: 2010–2020
+  - Validation: 2021
 
-Hyperparameters are selected by averaging validation performance across the three folds.  
-No shuffling is applied at any stage.
+The decision metric (for hyperparameters selection) is the average performance across the three folds. I used ($\mu * \sigma$) as a figure of merit, and where $\mu$ is the average validation loss and $\sigma$ its std, both weighted by number of datapoints.
 
-After tuning, the model is retrained on **2010–2020** and evaluated once on:
+Below is an example of grid search performed for hyperparameters tuning:
 
-- **Test:** 2021–2023
+<img src="resources/data/outputs/selected_plots/grid_search_patience_lr_map.png" width="500">
+
+After tuning, the model is evaluated once on:
+
+- **Test:** 2022
+
+<img src="resources/data/outputs/selected_plots/2025-12-5_best_model_prediction.png" width="700">
+
+<img src="resources/data/outputs/selected_plots/2025-12-5_best_model_prediction_scatter.png" width="400">
+
+**Next Steps** Correct title/label of plots (test instead of validation) 
 
 All reported metrics come exclusively from the test period.
-
 
 ### GARCH forecasting
 The sample is split chronologically into:
@@ -131,37 +150,62 @@ The sample is split chronologically into:
 
 Overall GARCH(1,1) fit and realized volatility:
 
-<img src="resources/plots/garch_analysis.png" width="600">
+<img src="resources/data/outputs/selected_plots/garch_analysis.png" width="600">
 
 Below is a zoom on the last two years of the test period.  
 Red markers show **2-day-ahead GARCH volatility forecasts**, plotted every 5 trading days:
 
-<img src="resources/plots/garch_analysis_zoom.png" width="600">
-
+<img src="resources/data/outputs/selected_plots/garch_analysis_zoom.png" width="600">
 
 
 ### Trading Strategy
-To isolate the effect of the model, a simple directional strategy is used:
+Buy 'SPY + PUT' at 't' and sell it at 't+1' when increase of extrinsic value is predicted.
 
-```
-signal = NN prediction of (next-day option price – current price)
+**Demo**
+Let us call $S$ the underlying stock price (SPY) and $P$ the put option on it. Assuming no transaction fee (but including spread), the strategy yields return $R$:
 
-if signal > threshold → buy option
-if signal < -threshold → sell option
-```
+$$
+R = S_{t+1}^{bid} + P_{t+1}^{bid} - \left( S_{t}^{ask} + P_{t}^{ask} \right)
+$$
 
-Transaction costs are incorporated in the backtest.
+We split the option price into its intrinsic value $I = K - S$, where $K$ is the strike price, and its extrinsic value $E = P-I$ (i.e. the extra price that some market participants are willing to pay to obtain the option). Unlike standard definitions, I allow negative intrinsic value because exercising an OTM option ($I < 0$) would lose money; the negative value represents this consideration. This allows for a more complete mathematical framework.
 
-### Backtest Framework
-To be defined:
-- Execution assumptions (EOD pricing, slippage model)
-- Performance metrics (Sharpe ratio, annualized return, drawdown, hit ratio)
+This yields $P=K-S+E$, and hence:
 
+$$
+R = S_{t+1}^{bid} + K - S_{t+1}^{bid} + E_{t+1}^{bid} - \left( S_{t}^{ask} + K - S_{t}^{ask} + E_{t}^{ask} \right)
+$$
+
+$$
+R = E_{t+1}^{bid} - E_{t}^{ask}
+$$
+
+Hence, for this portfolio, a trading signal is that our prediction of the next extrinsic value $\tilde{E}_{t+1}^{bid}$ be greater than $E_{t}^{ask}$. If accurate, the strategy would be profitable.
+
+
+## Backtest and Results
+
+#### Conditions / Framework
+- Tested on test set (i.e. 2022)
+- Spread is accounted for (buy at ask, sell at bid)
+- SPY option transaction fee is $1
+- SPY asset transaction fee is negligible
+- Trades are executed when predicted gain is above $0.5
+- Initial capital is $1000
+- No more than half of the capital is used for trading
 
 ## Results
-**To be completed upon backtest execution.**
+- 12,106 trades
+- Avg/trade=$4.52, 
+- Hit rate=98.5%, 
+- Sharpe per trade=1.64, 
+- Max Drawdown=$42.45
+- Total PnL=$54,761.22
 
 ## Conclusions & Future Work
-**To be completed upon backtest execution.**
-
-
+- Upgrade NN architecture to XGBoost or deeper network
+- Add more input features such as market sentiment (e.g. VIX)
+- Try to detect and isolate market regimes
+- Test the strategy with real money by automatizing it on Interactive Broker
+- EOD data misses intraday microstructure -> Add intraday data to dataset
+- Test the model on current data
