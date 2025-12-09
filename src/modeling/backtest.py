@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 def standalone_backtest(
-    model_dir: Path=outputs_dir/"train_tracking/2025-12-08_experiment_0",
+    model_dir: Path=outputs_dir/"train_tracking/2025-12-08_experiment_3",
     model_name: str="model_0.pth"
 ):
     """
@@ -32,10 +32,10 @@ def run_backtest(
     df_test,
     next_E,
     next_E_pred,
-    fee: float = 0.5, # $ per option transaction
+    fee: float = 1., # $ per option transaction
     threshold: float = 0.5, # predicted net gain ($) from which it is worth trading
-    init_capital: float = 1e4, # initial capital
-    max_trade_capital_ratio: float = 0.5, # maximum capital to use for trading
+    init_capital: float = 1e5, # initial capital
+    max_trade_capital_ratio: float = 0.7, # maximum capital to use for trading
 ) -> dict:
     """
     Run backtest using predicted extrinsic values.
@@ -61,7 +61,6 @@ def run_backtest(
     if torch.is_tensor(next_E_pred):
         next_E_pred = next_E_pred.cpu().numpy()
 
-
     # Calculate current extrinsic at ask
     current_E_ask = df_test["ASK"].to_numpy() - (df_test["STRIKE"].to_numpy() - df_test["UNDERLYING_LAST"].to_numpy())
 
@@ -71,16 +70,13 @@ def run_backtest(
     n_opportunities = len(next_E_pred)
 
     pos_costs = df_test["ASK"].to_numpy() + df_test["UNDERLYING_LAST"].to_numpy() + fee
-    net_gain_pred = (next_E_pred-fee) - (current_E_ask - fee)
-    net_gain_actual = (next_E - fee) - (current_E_ask - fee)
+    net_gain_pred = next_E_pred - current_E_ask - 2*fee
+    net_gain_actual = next_E - current_E_ask - 2*fee
 
     trade_signals = np.zeros(n_opportunities, dtype=bool)
-    pnl_per_trade = np.zeros(n_opportunities)
     capital = init_capital
-    capital_history = [capital]
-
-    # Keep track of where each day starts in the full array
-    cumulative_idx = 0
+    day_capital_history = [capital]
+    cumulative_idx = 0 # Keep track of where each day starts in the full array
     pnl_days = [0.]
 
     for date in trading_days:
@@ -96,7 +92,7 @@ def run_backtest(
         day_net_gain_actual = net_gain_actual[day_mask]
 
         if len(day_net_gain_pred) == 0:
-            capital_history.append(capital)
+            day_capital_history.append(capital)
             cumulative_idx += len(day_indices)
             continue
 
@@ -108,7 +104,8 @@ def run_backtest(
         daily_cost = 0.
         current_idx = 0
         while (
-            daily_cost + ordered_pos_cost[current_idx] <= max_trade_capital_ratio * capital 
+            current_idx < ordered_pos_cost.shape[0] 
+            and daily_cost + ordered_pos_cost[current_idx] <= max_trade_capital_ratio * capital 
             and current_idx < len(sorted_indices)
             and ordered_pred_gain[current_idx] > threshold
         ):
@@ -121,49 +118,36 @@ def run_backtest(
 
         # Update capital
         capital += pnl_days[-1]
-        capital_history.append(capital)
+        day_capital_history.append(capital)
 
         cumulative_idx += len(day_indices)
 
-    # plt.plot(trading_days, capital_history[:-1])
-    # plt.show()
-
-    pnl_per_trade[trade_signals] = net_gain_actual[trade_signals]
-
     # Calculate statistics
+    n_trades = trade_signals.sum()
+    if n_trades == 0:
+        full_logger.info("No trades for the selected parameters")
+        return 0
+    pnl_per_trade = net_gain_actual[trade_signals] # pnl per realized trade
+    avg_pnl_per_trade = pnl_per_trade.mean()
     cumulative_pnl = np.cumsum(pnl_per_trade)
-    n_trades = trade_signals.sum()
     total_pnl = pnl_per_trade.sum()
-    
-    if n_trades > 0:
-        avg_pnl_per_trade = pnl_per_trade[trade_signals].mean()
-        hit_ratio = (pnl_per_trade[trade_signals] > 0).mean()
-        pnl_std = pnl_per_trade[trade_signals].std(ddof=1) if n_trades > 1 else 0.0
-        sharpe = avg_pnl_per_trade / pnl_std * np.sqrt(252) if pnl_std > 0 else np.nan
-    else:
-        avg_pnl_per_trade = 0.0
-        hit_ratio = np.nan
-        sharpe = np.nan
-    
-    # Generate plots
-    backtest_plots(net_gain_actual, net_gain_pred, cumulative_pnl, pnl_per_trade, trade_signals, max_nb_datapoints=int(1e6))
-    
-    # Statistics
-    n_trades = trade_signals.sum()
-    total_pnl = pnl_per_trade.sum()
-    
-    if n_trades > 0:
-        avg_pnl_per_trade = pnl_per_trade[trade_signals].mean()
-        hit_ratio = (pnl_per_trade[trade_signals] > 0).mean()
-        pnl_std = pnl_per_trade[trade_signals].std(ddof=1) if n_trades > 1 else 0.0
-        sharpe = avg_pnl_per_trade / pnl_std if pnl_std > 0 else np.nan
-        max_drawdown = calculate_max_drawdown(cumulative_pnl)
-    else:
-        avg_pnl_per_trade = 0.0
-        hit_ratio = np.nan
-        sharpe = np.nan
-    
+    hit_ratio = (pnl_per_trade > 0).mean()
+    sharpe = calculate_sharpe(day_capital_history)
+    equity = init_capital + cumulative_pnl
+    max_drawdown_pct = calculate_max_drawdown_pct(equity)
 
+    # Generate plots
+    backtest_plots(
+        net_gain_actual, 
+        net_gain_pred, 
+        equity, 
+        trading_days, 
+        day_capital_history,
+        cumulative_pnl, 
+        pnl_per_trade, 
+        trade_signals, 
+        max_nb_datapoints=int(1e3)
+    )
 
     stats = {
         "threshold": threshold,
@@ -176,23 +160,26 @@ def run_backtest(
         "hit_ratio": float(hit_ratio) if not np.isnan(hit_ratio) else np.nan,
         "approx_sharpe_per_trade": float(sharpe) if not np.isnan(sharpe) else np.nan,
         "final_pnl": float(cumulative_pnl[-1]) if len(cumulative_pnl) > 0 else 0.0,
-        "max_DD": float(max_drawdown)
+        "max_DD_pct": float(max_drawdown_pct)
     }
     
     full_logger.info(
-        f"Backtest (threshold=${threshold:.3f}): "
-        f"{stats['n_trades']} trades, "
-        f"Total PnL=${stats['total_pnl']:.2f}, "
-        f"Avg/trade=${stats['avg_pnl_per_trade']:.4f}, "
+        f"Backtest (threshold=${threshold:.2f}): "
+        f"{stats['n_trades']:,d} trades, "
+        f"Total PnL=${stats['total_pnl']:,.2f} (+{total_pnl/init_capital:.2%}), "
+        f"Avg/trade=${stats['avg_pnl_per_trade']:.3f}, "
         f"Hit rate={stats['hit_ratio']:.1%}, "
         f"approx_sharpe_per_trade={stats['approx_sharpe_per_trade']:.2f}, "
-        f"Max-DD=${stats['max_DD']:.2f}")
+        f"Max-DD={stats['max_DD_pct']:.2%}")
     
     return stats
 
 
 def backtest_plots(net_gain_actual, 
     net_gain_pred, 
+    equity,
+    trading_days, 
+    day_capital_history,
     cumulative_pnl, 
     pnl_per_trade, 
     trade_signals, 
@@ -232,7 +219,7 @@ def backtest_plots(net_gain_actual,
     fig2, (ax3, ax4) = plt.subplots(2, 1, figsize=(12, 8))
     
     # Top: Cumulative P&L
-    ax3.plot(cumulative_pnl, 'b-', linewidth=2, label='Cumulative P&L')
+    ax3.plot(cumulative_pnl, 'b-', linewidth=2)
     ax3.fill_between(range(len(cumulative_pnl)), 0, cumulative_pnl, alpha=0.2)
     ax3.axhline(y=0, color='k', linestyle='-', alpha=0.3)
     ax3.set_ylabel('Cumulative P&L ($)')
@@ -242,8 +229,8 @@ def backtest_plots(net_gain_actual,
     
     # Add key metrics
     final_pnl = cumulative_pnl[-1] if len(cumulative_pnl) > 0 else 0
-    max_dd = np.min(np.maximum.accumulate(cumulative_pnl) - cumulative_pnl) if len(cumulative_pnl) > 0 else 0
-    ax3.text(0.02, 0.98, f'Final P&L: ${final_pnl:.2f}\nMax Drawdown: ${max_dd:.2f}\nTrades: {trade_signals.sum()}',
+    max_drawdown_pct = calculate_max_drawdown_pct(equity)
+    ax3.text(0.02, 0.98, f'Final P&L: ${final_pnl:.2f} ({final_pnl/equity[0]:,.2%})\nMax Drawdown: ${max_drawdown_pct:.2f}\nTrades: {trade_signals.sum():,d}',
              transform=ax3.transAxes, verticalalignment='top',
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
@@ -260,24 +247,45 @@ def backtest_plots(net_gain_actual,
     plt.tight_layout()
 
 
+    fig3, ax5 = plt.subplots(figsize=(12, 6))
+    ax5.plot(trading_days, day_capital_history[1:])
+    ax5.set_xlabel('Date')
+    ax5.set_ylabel('Capital ($)')
+    ax5.set_title('Daily Capital Evolution')
+    ax5.grid(True, alpha=0.3)
 
-def calculate_max_drawdown(cumulative_pnl: np.ndarray) -> float:
+    plt.tight_layout()
+
+
+
+def calculate_max_drawdown_pct(equity: np.ndarray) -> float:
     """
-    Calculate maximum drawdown from cumulative P&L.
-    
-    Returns:
-        Max drawdown as positive number (e.g., 100 means $100 loss from peak)
+    Maximum drawdown as a percentage drop from peak.
+    Example: returns 0.25 for a 25% drawdown.
     """
-    if len(cumulative_pnl) == 0:
+    if len(equity) == 0:
         return 0.0
-    
-    # Calculate running maximum
-    running_max = np.maximum.accumulate(cumulative_pnl)
-    
-    # Calculate drawdowns (positive = loss)
-    drawdowns = running_max - cumulative_pnl
-    
-    # Get maximum drawdown
-    max_dd = np.max(drawdowns)
-    
-    return max_dd
+
+    running_max = np.maximum.accumulate(equity)
+
+    # avoid division by zero
+    valid = running_max > 0
+    rel_dd = np.zeros_like(equity, dtype=float)
+    rel_dd[valid] = (running_max[valid] - equity[valid]) / running_max[valid]
+
+    # idx = np.argmax(rel_dd); max_dd = rel_dd[idx]; cumul_at_max_dd = equity[idx]
+    # print(idx, max_dd, cumul_at_max_dd)
+
+    return float(np.max(rel_dd))
+
+
+def calculate_sharpe(capital_history):
+    capital_arr = np.array(capital_history, dtype=float)
+    daily_returns = capital_arr[1:] / capital_arr[0:-1] - 1
+
+    if len(daily_returns) > 1 and daily_returns.std(ddof=1) > 0:
+        sharpe = daily_returns.mean() / daily_returns.std(ddof=1) * np.sqrt(252)
+    else:
+        sharpe = np.nan
+
+    return sharpe

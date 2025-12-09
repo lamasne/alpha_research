@@ -1,7 +1,5 @@
 # Backtesting of a Custom ML-Driven Option Trading Strategy
 
-**Status** (Nov 2025): This project is under active development (e.g., extending dataset to 10 years, refining GARCH modeling, building deeper neural network architecture with more input features). Previous versions are available [here](https://github.com/lamasne/technical_analysis.git).
-
 ## Motivation
 The Black–Scholes framework assumes that if volatility is correctly estimated, a delta-hedged option position should earn the risk-free rate. Many volatility trading strategies are therefore based on forecasting future realized volatility more accurately than the market.
 
@@ -10,9 +8,9 @@ However, option prices are influenced by additional factors beyond volatility ex
 This project investigates whether a data-driven model can learn such effects and use them to generate alpha.
 
 ## Objective & Hypothesis
-**Hypothesis.** Option prices embed information beyond its intrinsic value and the realized volatility expected by market participants. A neural network trained on additional variables (e.g. past option price dynamics, bias in volatility forecasting from market participants, risk-aversion indicators) can generate profitable trading signals.
+**Hypothesis.** Option prices embed information beyond their intrinsic value and the realized volatility expected by market participants. A neural network trained on additional variables (e.g. past option price dynamics, bias in volatility forecasting from market participants, risk-aversion indicators) can generate profitable trading signals.
 
-**Goal.** Build and train such a model on historical SPY end-of-day options data, then backtest a simple long/short options strategy based on its predictions, including transaction costs.
+**Goal.** Build and train such a model on historical SPY end-of-day options data, then backtest a 1:1 delta hedging strategy based on its predictions, including transaction costs.
 
 ## Data
 ### Sources
@@ -24,7 +22,7 @@ This project investigates whether a data-driven model can learn such effects and
 
 ### Data exploration
 Trading activity is strongly concentrated around at-the-money strikes. As strike distance increases, traded volume decreases approximately exponentially (appearing nearly linear on the log-scale), as shown below.
-<img src="resources/data/outputs/selected_plots/volume_to_strike_distance_SPY_calls_2010-2023.png" width="400">
+<img src="resources/selected_plots/volume_to_strike_distance_SPY_calls_2010-2023.png" width="400">
 
 To verify the correctness of the implied volatility computation, I compared the calculated IV (`MY_IV`) against the dataset-provided IV values over random samples:
 
@@ -41,8 +39,9 @@ IV (dataset) → IV (computed)
 The custom IV computation shows consistent behavior, with a mean error of **7.01e-03 (5.24%)** and a mean absolute error of **1.07e-02 (7.99%)**, confirming reasonable agreement with the reference data for this sanity check.
 
 To validate the underlying prices, I compared SPY close prices from the options datasets against SPY closes from Yahoo Finance (yfinance) over 2020–2021. The three series overlap almost perfectly, confirming that the underlying data is consistent with market quotes.
+**Next steps** quantify variations (e.g. RMSE).
 
-<img src="resources/data/outputs/selected_plots/spy_close_comparison_2020_2021.png" width="600">
+<!-- <img src="resources/selected_plots/spy_close_comparison_2020_2021.png" width="600"> -->
 
 #### NEXT_QUOTE_DAY Sanity Check
 
@@ -75,7 +74,7 @@ To validate the underlying prices, I compared SPY close prices from the options 
 
 #### Output / target
 To mitigate the dominant effect of underlying-price fluctuations and focus on more predictable components (which is also more relevant for delta-hedging)
-- Next-day extrinsic value of seller-side put option i.e. (BID - K + S)
+- Next-day extrinsic value of seller-side put option<!-- i.e. (BID - K + S) -->
 
 Target is optionally log-transformed (depending on config)
 
@@ -92,6 +91,21 @@ Target is optionally log-transformed (depending on config)
 - "LOG_VOLUME"
 - "LOG_MONEYNESS"
 - "DELTA", "GAMMA", "VEGA", "THETA", "RHO" # Greeks
+
+##### GARCH forecasting
+The sample is split chronologically into:
+
+- **Training:** 2010–2018  
+- **Test:** 2018–2022  
+
+Overall GARCH(1,1) fit and realized volatility:
+
+<img src="resources/selected_plots/garch_analysis.png" width="600">
+
+Below is a zoom on the last two years of the test period.  
+Red markers show **2-day-ahead GARCH volatility forecasts**, plotted every 5 trading days:
+
+<img src="resources/selected_plots/garch_analysis_zoom.png" width="600">
 
 All continuous features are standardized (mean = 0, std = 1).
 
@@ -124,39 +138,28 @@ A **3-fold walk-forward expanding-window scheme** is usedto respect time orderin
   - Train: 2010–2020
   - Validation: 2021
 
-The decision metric (for hyperparameters selection) is the average performance across the three folds. I used ($\mu * \sigma$) as a figure of merit, and where $\mu$ is the average validation loss and $\sigma$ its std, both weighted by number of datapoints.
+The decision metric (for hyperparameters selection) is the average performance across the three folds. I used ($\mu * \sigma$) as a figure of merit where $\mu$ is the average validation loss and $\sigma$ its std, both weighted by number of datapoints.
 
 Below is an example of grid search performed for hyperparameters tuning:
 
-<img src="resources/data/outputs/selected_plots/grid_search_patience_lr_map.png" width="500">
+<img src="resources/selected_plots/grid_search_patience_lr_map.png" width="500">
 
 After tuning, the model is evaluated once on:
 
 - **Test:** 2022
 
-<img src="resources/data/outputs/selected_plots/2025-12-5_best_model_prediction.png" width="700">
+Below scatter plot of the model's prediction (of SPY put options's next-day extrinsinc values) from the whole test set, compared to actual values.
 
-<img src="resources/data/outputs/selected_plots/2025-12-5_best_model_prediction_scatter.png" width="400">
+<img src="resources/selected_plots/2025-12-5_best_model_prediction_scatter.png" width="400">
+
+And another visualization of the same data (first 200 values) is shown below:
+
+<img src="resources/selected_plots/2025-12-5_best_model_prediction.png" width="700">
+
 
 **Next Steps** Correct title/label of plots (test instead of validation) 
 
 All reported metrics come exclusively from the test period.
-
-### GARCH forecasting
-The sample is split chronologically into:
-
-- **Training:** 2010–2018  
-- **Test:** 2018–2022  
-
-Overall GARCH(1,1) fit and realized volatility:
-
-<img src="resources/data/outputs/selected_plots/garch_analysis.png" width="600">
-
-Below is a zoom on the last two years of the test period.  
-Red markers show **2-day-ahead GARCH volatility forecasts**, plotted every 5 trading days:
-
-<img src="resources/data/outputs/selected_plots/garch_analysis_zoom.png" width="600">
-
 
 ### Trading Strategy
 Buy 'SPY + PUT' at 't' and sell it at 't+1' when increase of extrinsic value is predicted.
@@ -188,24 +191,21 @@ Hence, for this portfolio, a trading signal is that our prediction of the next e
 #### Conditions / Framework
 - Tested on test set (i.e. 2022)
 - Spread is accounted for (buy at ask, sell at bid)
-- SPY option transaction fee is $1
+- SPY option transaction fee is $0.5
 - SPY asset transaction fee is negligible
-- Trades are executed when predicted gain is above $0.5
-- Initial capital is $1000
-- No more than half of the capital is used for trading
+- Trades are executed when predicted gain is above $0.5 (to lower risk)
+- Initial capital is $100,000
+- 30% of the capital is blocked to avoid overtrading
 
 ## Results
-- 12,106 trades
-- Avg/trade=$4.52, 
-- Hit rate=98.5%, 
-- Sharpe per trade=1.64, 
-- Max Drawdown=$42.45
-- Total PnL=$54,761.22
+Sharpe ratio $\geq 2.0$
+
+For more information about the metrics, contact me at neillamas@gmail.com
 
 ## Conclusions & Future Work
 - Upgrade NN architecture to XGBoost or deeper network
 - Add more input features such as market sentiment (e.g. VIX)
 - Try to detect and isolate market regimes
-- Test the strategy with real money by automatizing it on Interactive Broker
 - EOD data misses intraday microstructure -> Add intraday data to dataset
 - Test the model on current data
+- Test the strategy with real money by automatizing it (e.g. via Interactive Broker)
