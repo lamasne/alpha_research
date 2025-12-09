@@ -186,9 +186,8 @@ $$
 Hence, for this portfolio, a trading signal is that our prediction of the next extrinsic value $\tilde{E}_{t+1}^{bid}$ be greater than $E_{t}^{ask}$. If accurate, the strategy would be profitable.
 
 
-## Backtest and Results
+### Backtest Conditions/Framework
 
-#### Conditions / Framework
 - Tested on test set (i.e. 2022)
 - Spread is accounted for (buy at ask, sell at bid)
 - SPY option transaction fee is $0.5
@@ -197,12 +196,12 @@ Hence, for this portfolio, a trading signal is that our prediction of the next e
 - Initial capital is $100,000
 - 30% of the capital is blocked to avoid overtrading
 
-## Results
+## Results & Conclusions
 Sharpe ratio $\geq 2.0$
 
-For more information about the metrics, contact me at neillamas@gmail.com
+For more information about the metrics and/or to discuss the results, contact me at neillamas@gmail.com
 
-## Conclusions & Future Work
+## Future Work
 - Upgrade NN architecture to XGBoost or deeper network
 - Add more input features such as market sentiment (e.g. VIX)
 - Try to detect and isolate market regimes
